@@ -14,7 +14,7 @@ async def send_start_message(client: Client, message: Message):
             'Stremio eklentisini yüklemek için aşağıdaki URLyi kopyalayın ve Stremio eklentilerine ekleyin:\n\n'
             f'<b>Eklenti adresin:</b>\n<code>{addon_url}</code>\n\n'
     '<b>Eklenti adresini başkalarına paylaşma!</b>\n'
-            'Paylaşırsan video izlerken donmalar yaşayabilirsin. '
+            'Paylaşırsan video izlerken donmalar yaşayabilirsin. \n'
             'Sonra ‘Kartal abi video donuyor’ dersin. 😃',
             quote=True,
             parse_mode=enums.ParseMode.HTML
