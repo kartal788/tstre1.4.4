@@ -13,7 +13,7 @@ async def send_start_message(client: Client, message: Message):
             '<b>Telegram stremio botuna hoş geldin.</b>\n\n'
             'Stremio eklentisini yüklemek için aşağıdaki URLyi kopyalayın ve Stremio eklentilerine ekleyin:\n\n'
             f'<b>Eklenti adresin:</b>\n<code>{addon_url}</code>\n\n'
-    '<b>'Eklenti adresini başkalarına verme!</b>\n' 
+    '<b>Eklenti adresini başkalarına verme!</b>\n' 
     'Verirsen dizi izlerken donma yaşarsın. \n'
     'Sonra Kartal abi video izlerken donuyor dersin.😃',
             quote=True,
