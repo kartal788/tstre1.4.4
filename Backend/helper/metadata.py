@@ -12,7 +12,7 @@ from Backend.helper.encrypt import encode_string
 
 # ----------------- Configuration -----------------
 DELAY = 0
-tmdb = aioTMDb(key=Telegram.TMDB_API, language="tr-TR", region="TR")
+tmdb = aioTMDb(key=Telegram.TMDB_API, language="en-US", region="US")
 
 # Cache dictionaries (per run)
 IMDB_CACHE: dict = {}
@@ -90,9 +90,9 @@ async def safe_tmdb_search(title: str, type_: str, year=None):
     try:
         async with API_SEMAPHORE:
             if type_ == "movie":
-                results = await tmdb.search().movies(query=title, year=year, language="tr-TR") if year else await tmdb.search().movies(query=title)
+                results = await tmdb.search().movies(query=title, year=year) if year else await tmdb.search().movies(query=title)
             else:
-                results = await tmdb.search().tv(query=title, language="tr-TR")
+                results = await tmdb.search().tv(query=title)
         res = results[0] if results else None
         TMDB_SEARCH_CACHE[key] = res
         return res
@@ -107,11 +107,8 @@ async def _tmdb_movie_details(movie_id):
     try:
         async with API_SEMAPHORE:
             details = await tmdb.movie(movie_id).details(
-    append_to_response="external_ids,credits",
-    language="tr-TR"
-)
-images = await tmdb.movie(movie_id).images(language="tr-TR")
-
+                append_to_response="external_ids,credits"
+            )
             images = await tmdb.movie(movie_id).images()
             details.images = images
 
@@ -129,11 +126,8 @@ async def _tmdb_tv_details(tv_id):
     try:
         async with API_SEMAPHORE:
             details = await tmdb.tv(tv_id).details(
-    append_to_response="external_ids,credits",
-    language="tr-TR"
-)
-images = await tmdb.tv(tv_id).images(language="tr-TR")
-
+                append_to_response="external_ids,credits"
+            )
             images = await tmdb.tv(tv_id).images()
             details.images = images
         TMDB_DETAILS_CACHE[tv_id] = details
@@ -150,7 +144,7 @@ async def _tmdb_episode_details(tv_id, season, episode):
         return EPISODE_CACHE[key]
     try:
         async with API_SEMAPHORE:
-            details = await tmdb.episode(tv_id, season, episode).details(language="tr-TR")
+            details = await tmdb.episode(tv_id, season, episode).details()
         EPISODE_CACHE[key] = details
         return details
     except Exception:
