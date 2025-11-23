@@ -1,90 +1,150 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="tr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Telegram Stremio{% endblock %}</title>
+
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
-    
+    <link rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+
+    <!-- TAILWIND TEMA AYARLARI -->
     <script>
         tailwind.config = {
+            darkMode: "class",
             theme: {
                 extend: {
                     colors: {
-                        primary: '{{ theme.colors.primary }}',
-                        secondary: '{{ theme.colors.secondary }}',
-                        accent: '{{ theme.colors.accent }}',
-                        background: '{{ theme.colors.background }}',
-                        card: '{{ theme.colors.card }}',
-                        text: '{{ theme.colors.text }}',
-                        'text-secondary': '{{ theme.colors.text_secondary }}'
+                        primary: "{{ theme.colors.primary }}",
+                        secondary: "{{ theme.colors.secondary }}",
+                        accent: "{{ theme.colors.accent }}",
+                        background: "{{ theme.colors.background }}",
+                        card: "{{ theme.colors.card }}",
+                        text: "{{ theme.colors.text }}",
+                        "text-secondary": "{{ theme.colors.text_secondary }}"
                     }
                 }
             }
         }
     </script>
+
+    <!-- EK CSS (Tema Renkleri) -->
     <style>
-        body { background-color: {{ theme.colors.background }}; color: {{ theme.colors.text }}; }
-        .theme-card { background-color: {{ theme.colors.card }}; }
-        .theme-primary { background-color: {{ theme.colors.primary }}; }
-        .theme-secondary { background-color: {{ theme.colors.secondary }}; }
-        .theme-accent { background-color: {{ theme.colors.accent }}; }
-        .theme-text-secondary { color: {{ theme.colors.text_secondary }}; }
+        body {
+            background-color: {{ theme.colors.background }};
+            color: {{ theme.colors.text }};
+        }
+
+        .theme-card {
+            background-color: {{ theme.colors.card }};
+        }
+
+        .theme-text-secondary {
+            color: {{ theme.colors.text_secondary }};
+        }
     </style>
 </head>
-<body class="min-h-screen">
-    <!-- Navigation -->
-    <nav class="theme-card shadow-lg border-b">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between items-center h-16">
-                <div class="flex items-center space-x-4">
-                    <h1 class="text-2xl font-bold text-primary">Stremio</h1>
-                    {% if current_user %}
-                    <div class="hidden md:flex space-x-4">
-                        <a href="/deneme/" class="text-text hover:text-primary px-3 py-2 rounded-md transition-colors">Kontrol Paneli</a>
-                        <a href="/deneme/media/manage" class="text-text hover:text-primary px-3 py-2 rounded-md transition-colors">Medya Yönetimi</a>
-                    </div>
-                    {% endif %}
+
+<body class="min-h-screen flex flex-col transition-colors duration-300">
+
+    <!-- NAVBAR -->
+    <nav class="theme-card border-b shadow-lg sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 lg:px-8 h-16 flex justify-between items-center">
+
+            <!-- Sol Taraf -->
+            <div class="flex items-center space-x-4">
+                <h1 class="text-2xl font-bold text-primary">Stremio</h1>
+
+                {% if current_user %}
+                <div class="hidden md:flex space-x-4">
+                    <a href="/deneme/" class="hover:text-primary transition">Kontrol Paneli</a>
+                    <a href="/deneme/media/manage" class="hover:text-primary transition">Medya Yönetimi</a>
                 </div>
-                
-                <div class="flex items-center space-x-4">
-                    <!-- Theme Selector -->
-                    <div class="relative">
-                        <form method="post" action="/deneme/set-theme" id="theme-form">
-                            <select name="theme" onchange="document.getElementById('theme-form').submit()" class="theme-card border border-gray-300 rounded-md px-3 py-2 text-sm">
-                                {% for theme_key, theme_data in themes.items() %}
-                                <option value="{{ theme_key }}" {% if current_theme == theme_key %}selected{% endif %}>
-                                    {{ theme_data.name }}
-                                </option>
-                                {% endfor %}
-                            </select>
-                        </form>
-                    </div>
-                    
-                    {% if current_user %}
-                    <div class="flex items-center space-x-4">
-                        <span class="text-sm theme-text-secondary">{{ current_user }}</span>
-                        <a href="/deneme/logout" class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition-colors">Çıkış yap</a>
-                    </div>
-                    {% endif %}
-                </div>
+                {% endif %}
             </div>
+
+            <!-- Sağ Taraf -->
+            <div class="flex items-center space-x-4">
+
+                <!-- Tema Seçici -->
+                <form method="post" action="/deneme/set-theme" id="theme-form">
+                    <select name="theme"
+                            onchange="document.getElementById('theme-form').submit()"
+                            class="theme-card border rounded-md px-3 py-2 text-sm">
+                        {% for key, data in themes.items() %}
+                            <option value="{{ key }}" {% if key == current_theme %}selected{% endif %}>
+                                {{ data.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </form>
+
+                <!-- Dark / Light Toggle -->
+                <button onclick="toggleDarkMode()"
+                        class="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:opacity-80 transition">
+                    <i id="darkIcon" class="fa-solid fa-moon"></i>
+                </button>
+
+                {% if current_user %}
+                <div class="hidden md:flex items-center space-x-3">
+                    <span class="theme-text-secondary text-sm">{{ current_user }}</span>
+                    <a href="/deneme/logout"
+                       class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition">
+                        Çıkış yap
+                    </a>
+                </div>
+                {% endif %}
+
+                <!-- Mobil Menü Butonu -->
+                <button class="md:hidden p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                        onclick="toggleMobileMenu()">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- MOBİL MENÜ -->
+        <div id="mobileMenu" class="hidden md:hidden px-4 pb-4 space-y-3 theme-card border-t">
+            {% if current_user %}
+            <a class="block hover:text-primary" href="/deneme/">Kontrol Paneli</a>
+            <a class="block hover:text-primary" href="/deneme/media/manage">Medya Yönetimi</a>
+
+            <div class="flex justify-between items-center pt-2">
+                <span>{{ current_user }}</span>
+                <a href="/deneme/logout"
+                   class="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700">
+                   Çıkış yap
+                </a>
+            </div>
+            {% endif %}
         </div>
     </nav>
 
-    <!-- Main Content -->
-    <main class="flex-1">
+    <!-- İÇERİK -->
+    <main class="flex-1 max-w-7xl mx-auto px-4 py-6">
         {% block content %}{% endblock %}
     </main>
 
-    <!-- Footer -->
-    <footer class="theme-card border-t mt-auto">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex justify-center">
-        <p class="theme-text-secondary text-sm text-center">
+    <!-- FOOTER -->
+    <footer class="theme-card border-t py-6">
+        <p class="text-center theme-text-secondary text-sm">
             © 2025 Telegram Stremio.
         </p>
-    </div>
-</footer>
+    </footer>
+
+    <script>
+        // DARK / LIGHT MODE
+        function toggleDarkMode() {
+            document.documentElement.classList.toggle("dark");
+        }
+
+        // MOBİL MENÜ
+        function toggleMobileMenu() {
+            const menu = document.getElementById("mobileMenu");
+            menu.classList.toggle("hidden");
+        }
+    </script>
+
 </body>
 </html>
