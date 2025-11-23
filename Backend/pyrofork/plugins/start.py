@@ -11,9 +11,7 @@ async def send_start_message(client: Client, message: Message):
 
         await message.reply_text(
             'Eklentiyi Stremio’ya yüklemek için aşağıdaki adresi kopyalayın ve Eklentiler bölümüne ekleyin.”\n\n'
-            f'<b>Eklenti adresin:</b>\n<code>{addon_url}</code>\n\n'
-    '<b>Eklenti adresini başkalarıyla paylaşmayın!</b>\n'
-            'Paylaşırsanız video izlerken donmalar yaşayabilirsiniz.',
+            f'<b>Eklenti adresin:</b>\n<code>{addon_url}</code>\n\n',
             quote=True,
             parse_mode=enums.ParseMode.HTML
         )
