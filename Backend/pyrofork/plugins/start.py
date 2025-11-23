@@ -10,8 +10,7 @@ async def send_start_message(client: Client, message: Message):
         addon_url = f"{base_url}/stremio/manifest.json"
 
         await message.reply_text(
-            '<b>Telegram stremio botuna hoş geldin.</b>\n\n'
-            'Stremio eklentisini yüklemek için aşağıdaki adresi kopyalayın ve Stremio eklentilerine ekleyin:\n\n'
+            'Eklentiyi Stremio’ya yüklemek için aşağıdaki adresi kopyalayın ve Eklentiler bölümüne ekleyin.”\n\n'
             f'<b>Eklenti adresin:</b>\n<code>{addon_url}</code>\n\n'
     '<b>Eklenti adresini başkalarıyla paylaşmayın!</b>\n'
             'Paylaşırsanız video izlerken donmalar yaşayabilirsiniz.',
