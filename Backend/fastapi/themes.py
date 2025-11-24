@@ -21,8 +21,8 @@ THEMES = {
         "accent": "#60A5FA",
         "background": "#0D1117",
         "card": "#161B22",
-        "text": "#E6EDF3",
-        "text_secondary": "#8B949E"
+        "text": "#1E293B",
+        "text_secondary": "#64748B"
     },
     "css_classes": "theme-dark-mode"
 },
