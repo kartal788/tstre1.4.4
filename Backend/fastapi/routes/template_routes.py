@@ -52,7 +52,7 @@ async def set_theme(request: Request, theme: str = Form(...)):
     return RedirectResponse(url=request.headers.get("referer", "/"), status_code=302)
 
 async def dashboard_page(request: Request, _: bool = Depends(require_auth)):
-    theme_name = request.session.get("theme", "purple_gradient")
+    theme_name = request.session.get("theme", "blue_navy")
     theme = get_theme(theme_name)
     current_user = get_current_user(request)
     
@@ -107,7 +107,7 @@ async def dashboard_page(request: Request, _: bool = Depends(require_auth)):
     
 
 async def media_management_page(request: Request, media_type: str = "movie", _: bool = Depends(require_auth)):
-    theme_name = request.session.get("theme", "purple_gradient")
+    theme_name = request.session.get("theme", "blue_navy")
     theme = get_theme(theme_name)
     current_user = get_current_user(request)
     
@@ -121,7 +121,7 @@ async def media_management_page(request: Request, media_type: str = "movie", _: 
     })
 
 async def edit_media_page(request: Request, tmdb_id: int, db_index: int, media_type: str, _: bool = Depends(require_auth)):
-    theme_name = request.session.get("theme", "purple_gradient")
+    theme_name = request.session.get("theme", "blue_navy")
     theme = get_theme(theme_name)
     current_user = get_current_user(request)
     
@@ -145,7 +145,7 @@ async def edit_media_page(request: Request, tmdb_id: int, db_index: int, media_t
     })
 
 async def public_status_page(request: Request):
-    theme_name = request.session.get("theme", "purple_gradient")
+    theme_name = request.session.get("theme", "blue_navy")
     theme = get_theme(theme_name)
     
     try:
@@ -177,7 +177,7 @@ async def public_status_page(request: Request):
     })
 
 async def stremio_guide_page(request: Request):
-    theme_name = request.session.get("theme", "purple_gradient")
+    theme_name = request.session.get("theme", "blue_navy")
     theme = get_theme(theme_name)
     
     return templates.TemplateResponse("stremio_guide.html", {
