@@ -4,6 +4,42 @@
 
 {% block content %}
 <div class="min-h-screen">
+            <!-- Media Management Section -->
+        <div class="mb-12">
+            <h2 class="text-2xl font-bold mb-6">Medya Yönetimi</h2>
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <a href="/deneme/media/manage?media_type=movie" class="block theme-card rounded-xl p-8 shadow-xl hover:shadow-2xl transition-all group">
+                    <div class="flex items-center">
+                        <div class="w-16 h-16 theme-primary rounded-lg flex items-center justify-center mr-6 group-hover:scale-110 transition-transform bg-opacity-20 text-primary">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="white">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4V2a1 1 0 011-1h8a1 1 0 011 1v2h4a1 1 0 110 2h-1v12a2 2 0 01-2-2V6H3a1 1 0 110-2h4zM9 6v10h6V6H9z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold mb-2">Filmleri Yönet</h3>
+                            <p class="theme-text-secondary">Filmleri düzenle</p>
+                            <div class="mt-2 text-primary font-semibold text-sm">{{ system_stats.movies|default(0) }} film</div>
+                        </div>
+                    </div>
+                </a>
+
+                <a href="/deneme/media/manage?media_type=tv" class="block theme-card rounded-xl p-8 shadow-xl hover:shadow-2xl transition-all group">
+                    <div class="flex items-center">
+                        <div class="w-16 h-16 theme-primary rounded-lg flex items-center justify-center mr-6 group-hover:scale-110 transition-transform bg-opacity-20 text-primary">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="white">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold mb-2">Dizileri yönet</h3>
+                            <p class="theme-text-secondary">Dizileri düzenle</p>
+                            <div class="mt-2 text-primary font-semibold text-sm">{{ system_stats.tv_shows|default(0) }} Diziler</div>
+                        </div>
+                    </div>
+                </a>
+            </div>
+        </div>
+
     <!-- Header with just status pill -->
     <header class="theme-card shadow-lg mb-8">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -131,41 +167,6 @@
             </div>
         </div>
 
-        <!-- Media Management Section -->
-        <div class="mb-12">
-            <h2 class="text-2xl font-bold mb-6">Medya Yönetimi</h2>
-            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <a href="/deneme/media/manage?media_type=movie" class="block theme-card rounded-xl p-8 shadow-xl hover:shadow-2xl transition-all group">
-                    <div class="flex items-center">
-                        <div class="w-16 h-16 theme-primary rounded-lg flex items-center justify-center mr-6 group-hover:scale-110 transition-transform bg-opacity-20 text-primary">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="white">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4V2a1 1 0 011-1h8a1 1 0 011 1v2h4a1 1 0 110 2h-1v12a2 2 0 01-2-2V6H3a1 1 0 110-2h4zM9 6v10h6V6H9z"></path>
-                            </svg>
-                        </div>
-                        <div>
-                            <h3 class="text-xl font-semibold mb-2">Filmleri Yönet</h3>
-                            <p class="theme-text-secondary">Filmleri düzenle</p>
-                            <div class="mt-2 text-primary font-semibold text-sm">{{ system_stats.movies|default(0) }} film</div>
-                        </div>
-                    </div>
-                </a>
-
-                <a href="/deneme/media/manage?media_type=tv" class="block theme-card rounded-xl p-8 shadow-xl hover:shadow-2xl transition-all group">
-                    <div class="flex items-center">
-                        <div class="w-16 h-16 theme-primary rounded-lg flex items-center justify-center mr-6 group-hover:scale-110 transition-transform bg-opacity-20 text-primary">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="white">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
-                            </svg>
-                        </div>
-                        <div>
-                            <h3 class="text-xl font-semibold mb-2">Dizileri yönet</h3>
-                            <p class="theme-text-secondary">Dizileri düzenle</p>
-                            <div class="mt-2 text-primary font-semibold text-sm">{{ system_stats.tv_shows|default(0) }} Diziler</div>
-                        </div>
-                    </div>
-                </a>
-            </div>
-        </div>
 
         <!-- Stremio Addon Section -->
         <div class="theme-card rounded-xl p-8 shadow-xl">
