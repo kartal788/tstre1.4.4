@@ -3,121 +3,38 @@
 {% block title %}Giriş Yap{% endblock %}
 
 {% block content %}
-<!-- Navbar -->
-<nav class="theme-card shadow-lg border-b">
-  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-    <div class="flex justify-between items-center h-16">
-      <div class="flex items-center space-x-4">
-        <h1 class="text-2xl font-bold text-primary">Stremio</h1>
-      </div>
-
-      <div class="hidden md:flex items-center space-x-4">
-        <a href="/deneme/" class="text-text hover:text-primary px-3 py-2 rounded-md transition-colors">Kontrol Paneli</a>
-        <a href="/deneme/media/manage" class="text-text hover:text-primary px-3 py-2 rounded-md transition-colors">Medya Yönetimi</a>
-
-        <form method="post" action="/deneme/set-theme" id="theme-form">
-          <select name="theme" onchange="document.getElementById('theme-form').submit()"
-            class="theme-card border border-gray-300 rounded-md px-3 py-2 text-sm">
-            {% for theme_key, theme_data in themes.items() %}
-            <option value="{{ theme_key }}" {% if current_theme == theme_key %}selected{% endif %}>
-              {{ theme_data.name }}
-            </option>
-            {% endfor %}
-          </select>
-        </form>
-
-        {% if current_user %}
-        <span class="text-sm theme-text-secondary">{{ current_user }}</span>
-        <a href="/deneme/logout"
-          class="bg-red-600 text-white px-2 py-1 rounded-md hover:bg-red-700 transition-colors">Çıkış yap</a>
-        {% else %}
-        <a href="/deneme/login"
-          class="bg-primary text-white px-3 py-2 rounded-md hover:opacity-90 transition-opacity font-medium">Giriş
-          Yap</a>
+<div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-md w-full space-y-8">
+        <div class="text-center">
+            <h2 class="text-3xl font-bold">Yönetici Girişi</h2>
+            <p class="mt-2 theme-text-secondary">Yönetici paneline erişmek için oturum açın</p>
+        </div>
+        
+        {% if error %}
+        <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
+            {{ error }}
+        </div>
         {% endif %}
-      </div>
-
-      <div class="md:hidden flex items-center">
-        <button id="mobile-menu-button"
-          class="inline-flex items-center justify-center p-2 rounded-md text-text hover:text-primary focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary">
-          <svg class="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24">
-            <path class="inline-flex" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-        </button>
-      </div>
+        
+        <form method="post" class="theme-card p-8 rounded-lg shadow-lg space-y-6">
+            <div>
+                <label for="username" class="block text-sm font-medium mb-2">Kullancı adı</label>
+                <input type="text" id="username" name="username" required 
+                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+            </div>
+            
+            <div>
+                <label for="password" class="block text-sm font-medium mb-2">Şifre</label>
+                <input type="password" id="password" name="password" required 
+                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+            </div>
+            
+            <button type="submit" 
+                    class="w-full theme-primary text-white py-2 px-4 rounded-md hover:opacity-90 transition-opacity font-medium">
+                Giriş Yap
+            </button>
+        </form>
+        
     </div>
-  </div>
-
-  <div id="mobile-menu" class="hidden md:hidden px-2 pt-2 pb-3 space-y-1">
-    <a href="/deneme/" class="block text-text hover:text-primary px-3 py-2 rounded-md transition-colors">Kontrol Paneli</a>
-    <a href="/deneme/media/manage" class="block text-text hover:text-primary px-3 py-2 rounded-md transition-colors">Medya Yönetimi</a>
-    
-    <form method="post" action="/deneme/set-theme" id="theme-form-mobile" class="mt-2">
-      <select name="theme" onchange="document.getElementById('theme-form-mobile').submit()"
-        class="theme-card border border-gray-300 rounded-md px-3 py-2 w-full text-sm">
-        {% for theme_key, theme_data in themes.items() %}
-        <option value="{{ theme_key }}" {% if current_theme == theme_key %}selected{% endif %}>
-          {{ theme_data.name }}
-        </option>
-        {% endfor %}
-      </select>
-    </form>
-
-    {% if current_user %}
-    <span class="block text-text theme-text-secondary px-3 py-2">{{ current_user }}</span>
-    <a href="/deneme/logout"
-      class="block bg-red-600 text-white px-3 py-2 rounded-md hover:bg-red-700 transition-colors">Çıkış yap</a>
-    {% else %}
-    <a href="/deneme/login"
-      class="block bg-primary text-white px-3 py-2 rounded-md hover:opacity-90 transition-opacity font-medium">Giriş
-      Yap</a>
-    {% endif %}
-  </div>
-</nav>
-
-<script>
-  const button = document.getElementById('mobile-menu-button');
-  const menu = document.getElementById('mobile-menu');
-  button.addEventListener('click', () => {
-    menu.classList.toggle('hidden');
-  });
-</script>
-
-<!-- Login Formu -->
-<div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-gray-50">
-  <div class="w-full max-w-md space-y-8">
-    <div class="text-center">
-      <h2 class="text-3xl font-bold text-primary">Yönetici Girişi</h2>
-      <p class="mt-2 theme-text-secondary text-sm">Yönetici paneline erişmek için oturum açın</p>
-    </div>
-
-    {% if error %}
-    <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-4 text-sm">
-      {{ error }}
-    </div>
-    {% endif %}
-
-    <form method="post" class="theme-card p-8 rounded-xl shadow-xl space-y-6">
-      <div>
-        <label for="username" class="block text-sm font-medium mb-2">Kullanıcı Adı</label>
-        <input type="text" id="username" name="username" required
-          value="{{ username|default('') }}"
-          class="w-full px-3 py-2 border border-gray-300 rounded-md text-text placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
-      </div>
-
-      <div>
-        <label for="password" class="block text-sm font-medium mb-2">Şifre</label>
-        <input type="password" id="password" name="password" required
-          class="w-full px-3 py-2 border border-gray-300 rounded-md text-text placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
-      </div>
-
-      <button type="submit"
-        class="w-full theme-primary text-white py-2 px-4 rounded-md hover:opacity-90 transition-opacity font-medium">
-        Giriş Yap
-      </button>
-    </form>
-  </div>
 </div>
-
 {% endblock %}
