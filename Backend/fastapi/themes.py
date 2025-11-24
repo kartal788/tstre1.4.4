@@ -12,19 +12,6 @@ THEMES = {
             "text_secondary": "#64748B"
         },
         "css_classes": "theme-purple-gradient"
-    },
-    "dark_mode": {
-    "name": "Karanlık Mod",
-    "colors": {
-        "primary": "#3B82F6",
-        "secondary": "#1E40AF",
-        "accent": "#60A5FA",
-        "background": "#0D1117",
-        "card": "#161B22",
-        "text": "#1E293B",
-        "text_secondary": "#64748B"
-    },
-    "css_classes": "theme-dark-mode"
 },
     "blue_navy": {
         "name": "Lacivert",
