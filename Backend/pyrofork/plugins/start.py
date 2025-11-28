@@ -13,21 +13,18 @@ async def send_start_message(client: Client, message: Message):
 
         # Database istatistiklerini al
         db_stats_list = await db.get_database_stats()
-        # Örnek olarak aktif storage DB = 1
-        db_stat = db_stats_list[0]
 
-        # Film / Dizi sayıları
-        movie_count = f"{db_stat['movie_count']:,}"
-        tv_count = f"{db_stat['tv_count']:,}"
+        if not db_stats_list:
+            await message.reply_text("⚠️ Storage DB bulunamadı veya bağlantı kurulamadı!")
+            return
 
-        # Depolama bilgisi ve bar
-        used_mb = db_stat['storageSize'] / 1024 / 1024
-        total_mb = 500  # toplam depolama MB cinsinden (örnek)
+        # Tüm storage DB’lerini topla
+        movie_count = sum(d['movie_count'] for d in db_stats_list)
+        tv_count = sum(d['tv_count'] for d in db_stats_list)
+        used_mb = sum(d['storageSize'] for d in db_stats_list) / 1024 / 1024
+        total_mb = 500 * len(db_stats_list)  # her DB için 500 MB varsayıldı
+
         percent = round((used_mb / total_mb) * 100)
-        bar_size = 12
-        filled = int((percent / 100) * bar_size)
-        empty = bar_size - filled
-        bar = "⬢" * filled + "⬡" * empty
 
         # Telegram mesajı
         text = (
@@ -36,8 +33,7 @@ async def send_start_message(client: Client, message: Message):
             f"🎬 <b>Filmler:</b> {movie_count}\n"
             f"📺 <b>Diziler:</b> {tv_count}\n\n"
             f"💾 <b>Depolama:</b>\n"
-            f"{used_mb:.1f}MB / {total_mb}MB ({percent}%)\n"
-            f"[{bar}]"
+            f"{used_mb:.1f}MB / {total_mb}MB ({percent}%)"
         )
 
         await message.reply_text(text, quote=True, parse_mode=enums.ParseMode.HTML)
