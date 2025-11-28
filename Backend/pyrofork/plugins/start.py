@@ -10,9 +10,7 @@ def hex_bar(percent: int, size: int = 12):
     """
     filled = int((percent / 100) * size)
     empty = size - filled
-
     return "⬢" * filled + "⬡" * empty
-
 
 @Client.on_message(filters.command("start") & filters.private)
 async def send_start_message(client: Client, message: Message):
@@ -20,12 +18,17 @@ async def send_start_message(client: Client, message: Message):
         base_url = Telegram.BASE_URL
         addon_url = f"{base_url}/stremio/manifest.json"
 
-        # Örnek depolama verileri — gerçek DB değerlerini buraya koyabilirsin
-        used_mb = 320
-        total_mb = 500
+        # 🎯 db_stat verisini burada alıyorsun (örnek)
+        db_stat = get_database_stats()  
+        # örn: db_stat.storageSize → bytes
+
+        # Jinja eşdeğeri:
+        # {{ "%.1f"|format(db_stat.storageSize / 1024 / 1024) }}
+        used_mb = float(f"{db_stat.storageSize / 1024 / 1024:.1f}")
+
+        total_mb = 500  # Toplam alan
         percent = round((used_mb / total_mb) * 100)
 
-        # Altıgen bar oluştur
         bar = hex_bar(percent)
 
         text = (
