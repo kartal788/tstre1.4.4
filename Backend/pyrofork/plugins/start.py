@@ -7,6 +7,7 @@ import os
 import importlib.util
 
 CONFIG_PATH = "/home/debian/tstre1.4.4/config.py"
+TOTAL_STORAGE_MB = 500  # Toplam depolama
 
 def read_database_from_config():
     """config.py içinden DATABASE değişkenini al"""
@@ -35,14 +36,15 @@ def get_db_stats(url):
     series_count = db["tv"].count_documents({})
     stats = db.command("dbstats")
     storage_mb = round(stats["storageSize"] / (1024 * 1024), 2)
-    storage_percent = round(stats["storageSize"] / stats["fileSize"] * 100, 2) if stats.get("fileSize") else 0
+    storage_percent = round((storage_mb / TOTAL_STORAGE_MB) * 100, 2)
     return movies_count, series_count, storage_mb, storage_percent
 
 @Client.on_message(filters.command('start') & filters.private & CustomFilters.owner, group=10)
 async def send_start_message(client: Client, message: Message):
     try:
+        # Eklenti URL'si yazı olarak gösterilecek
         base_url = Telegram.BASE_URL
-        addon_url = f"{base_url}/stremio/manifest.json"
+        addon_url_text = f"Eklenti adresin: {base_url}/stremio/manifest.json"
 
         db_urls = get_db_urls()
         db_stats_text = ""
@@ -56,10 +58,9 @@ async def send_start_message(client: Client, message: Message):
                     f"Depolama: {storage_percent}% ({storage_mb} MB)"
                 )
 
-        # Tek f-string olarak mesajı gönder
+        # Mesajı tek f-string olarak gönder
         await message.reply_text(
-            f"Stremio Eklenti Adresin:\n{addon_url}\n"
-            f"Bu adresi Stremio > Eklentiler bölümüne ekleyerek kullanabilirsin."
+            f"{addon_url_text}\nBu adresi Stremio > Eklentiler bölümüne ekleyerek kullanabilirsin."
             f"{db_stats_text}",
             quote=True,
             parse_mode=enums.ParseMode.HTML
