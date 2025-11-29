@@ -15,7 +15,7 @@ loop = get_event_loop()
 
 async def start_services():
     try:
-        LOGGER.info(f"Stremiobot başlatılıyor v-{__version__}")
+        LOGGER.info(f"Initializing Telegram-Stremio v-{__version__}")
         await asleep(1.2)
         
         await db.connect()
@@ -38,12 +38,12 @@ async def start_services():
         await setup_bot_commands(StreamBot)
         await asleep(2)
 
-        LOGGER.info('Stremiobot Web Sunucusu Başlatılıyor.')
+        LOGGER.info('Initializing Telegram-Stremio Web Server...')
         await restart_notification()
         loop.create_task(server.serve())
         loop.create_task(ping())
         
-        LOGGER.info("Stremiobot Başarıyla Başlatıldı")
+        LOGGER.info("Telegram-Stremio Started Successfully!")
         await idle()
     except Exception:
         LOGGER.error("Error during startup:\n" + format_exc())
