@@ -1,7 +1,7 @@
 aiofiles
 fastapi
 py-googletrans==4.0.0
-httpx==0.23.3
+httpx>=0.27.2
 motor
 parse-torrent-title
 pyrofork
