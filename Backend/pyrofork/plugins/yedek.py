@@ -1,33 +1,28 @@
-from pyrogram import Client, filters
-from pyrogram.types import Message
-from psutil import virtual_memory, cpu_percent, disk_usage
-from time import time
+import psutil
+import time
+from pyrofork import Plugin
 
-# Bot başlama zamanı (genellikle main.py veya init dosyasında)
-bot_start_time = time()
+plugin = Plugin(name="system_info")
 
-# Disk kullanımını kontrol etmek için dizin (root veya download klasörü)
-DOWNLOAD_DIR = "/"
+@plugin.command("status")
+async def status(ctx):
+    """
+    Bot sistem durumunu gösterir: CPU, RAM ve uptime (hh:mm:ss).
+    """
+    # CPU ve RAM bilgisi
+    cpu_percent = psutil.cpu_percent(interval=1)
+    ram = psutil.virtual_memory()
 
-@Client.on_message(filters.command("yedek") & filters.private)
-async def system_status(client: Client, message: Message):
-    try:
-        # Sistem bilgilerini al
-        cpu = cpu_percent()
-        ram = virtual_memory().percent
-        free_disk = round(disk_usage(DOWNLOAD_DIR).free / (1024 ** 3), 2)  # GB cinsinden
-        uptime_sec = time() - bot_start_time
-        uptime = f"{int(uptime_sec // 3600)}h{int((uptime_sec % 3600) // 60)}m"
+    # Uptime hesaplama
+    uptime_seconds = time.time() - psutil.boot_time()
+    hours, remainder = divmod(uptime_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
 
-        # Mesajı hazırla
-        text = (
-            f"CPU: {cpu}% | FREE: {free_disk}GB\n"
-            f"RAM: {ram}% | UPTIME: {uptime}"
-        )
+    # Mesaj formatı
+    msg = (
+        f"CPU: {cpu_percent}% | FREE: {ram.available / (1024**3):.2f}GB\n"
+        f"RAM: {ram.percent}% | UPTIME: {int(hours)}h{int(minutes)}m{int(seconds)}s"
+    )
 
-        # Cevap gönder
-        await message.reply_text(text)
-
-    except Exception as e:
-        await message.reply_text(f"⚠️ Hata: {e}")
-        print(e)
+    # Telegram cevabı
+    await ctx.reply(msg)
