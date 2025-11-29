@@ -1,6 +1,7 @@
 aiofiles
 fastapi
-httpx
+py-googletrans==4.0.0
+httpx==0.23.3
 motor
 parse-torrent-title
 pyrofork
@@ -10,4 +11,3 @@ tgcrypto
 themoviedb
 uvicorn
 psutil
-py-googletrans @ git+https://github.com/ssut/py-googletrans.git@v4.0.0
