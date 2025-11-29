@@ -1,6 +1,6 @@
 aiofiles
 fastapi
-deep-translator==1.12.1
+deep-translator==1.11.4
 httpx
 motor
 parse-torrent-title
