@@ -25,7 +25,7 @@ COPY . .
 RUN python3 -m venv .venv \
     && . .venv/bin/activate \
     && pip install --upgrade pip setuptools wheel \
-    && pip install "https://github.com/lushan88a/google-trans-new/archive/refs/tags/1.1.9.tar.gz"
+    && pip install "https://github.com/ssut/py-googletrans/archive/refs/tags/v4.0.0.tar.gz"
 
 # uv ile diğer bağımlılıkları kur
 RUN uv sync --locked
