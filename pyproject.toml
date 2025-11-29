@@ -20,6 +20,7 @@ dependencies = [
     "tgcrypto>=1.2.5",
     "themoviedb>=1.0.2",
     "uvicorn>=0.34.2",
+    "psutil>=5.9.0",  # <-- bunu ekle
 ]
 
 [dependency-groups]
