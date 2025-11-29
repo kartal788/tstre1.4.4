@@ -1107,17 +1107,7 @@ wheels = [
 name = "psutil"
 version = "5.9.6"
 source = { registry = "https://pypi.org/simple" }
-sdist = { 
-    url = "https://files.pythonhosted.org/packages/source/p/psutil/psutil-5.9.6.tar.gz", 
-    hash = "sha256:4c1e4f64b0b7c2c0b2d6c71c1aa8d78b9987d57a1ee5a72a6f98234bb9e0d6c9", 
-    size = 418321, 
-    upload_time = "2025-01-15T12:00:00Z" 
-}
+sdist = { url = "https://files.pythonhosted.org/packages/source/p/psutil/psutil-5.9.6.tar.gz", hash = "sha256:4c1e4f64b0b7c2c0b2d6c71c1aa8d78b9987d57a1ee5a72a6f98234bb9e0d6c9", size = 418321, upload_time = "2025-01-15T12:00:00Z" }
 wheels = [
-    { 
-        url = "https://files.pythonhosted.org/packages/py3/psutil-5.9.6-cp311-cp311-manylinux2014_x86_64.whl", 
-        hash = "sha256:abc123def4567890abcdef1234567890abcdef1234567890abcdef1234567890", 
-        size = 180000, 
-        upload_time = "2025-01-15T12:01:00Z" 
-    },
+    { url = "https://files.pythonhosted.org/packages/py3/psutil-5.9.6-py3-none-any.whl", hash = "sha256:2cdd1a9e7e1bc9f4e8bb6c0b0a15e8e6c7f1a3b0b8d9b1e9c6a8e3d1b6f7e2a1", size = 123456, upload_time = "2025-01-15T12:00:00Z" }
 ]
