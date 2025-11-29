@@ -21,6 +21,7 @@ dependencies = [
     "themoviedb>=1.0.2",
     "uvicorn>=0.34.2",
     "psutil>=5.9.0",  # <-- bunu ekle
+    "googletrans==4.0.0-rc1",
 ]
 
 [dependency-groups]
