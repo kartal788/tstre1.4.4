@@ -55,7 +55,7 @@ async def database_status(_, message: Message):
         movies_count, series_count, storage_mb = stats
 
         text = (
-            f"Filmler:             {movies_count:,}\n"
+            f"Filmler:            {movies_count:,}\n"
             f"Diziler:            {series_count:,}\n"
             f"Depolama:     {storage_mb} MB"
         )
