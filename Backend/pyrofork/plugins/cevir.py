@@ -23,32 +23,33 @@ def get_db_urls():
     db_raw = read_database_from_config()
     if not db_raw:
         db_raw = os.getenv("DATABASE", "")
-    return [u.strip() for u in db_raw.split(",") if u.strip()]
+    urls = [u.strip() for u in db_raw.split(",") if u.strip()]
+    # Virgülden sonraki ikinci database kullan
+    if len(urls) >= 2:
+        return [urls[1]]
+    return urls
 
 # ------------ DATABASE Bağlantısı ------------
 db_urls = get_db_urls()
-if not db_urls or len(db_urls) < 2:
-    raise Exception("İkinci DATABASE bulunamadı!")
+if not db_urls:
+    raise Exception("DATABASE bulunamadı!")
 
-MONGO_URL = db_urls[1]  # Virgülden sonraki ikinci database
+MONGO_URL = db_urls[0]
 client = MongoClient(MONGO_URL)
-
-db_name = client.list_database_names()[0]  # Veya direkt DB adını yazabilirsin
+db_name = client.list_database_names()[0]
 db = client[db_name]
 
 movie_col = db["movie"]
 series_col = db["tv"]
 
-# ------------ Deep-Translator Translator ------------
-translator = GoogleTranslator(source='en', target='tr')
-
-# ------------ Güvenli Çeviri Fonksiyonu ------------
+# ------------ Güvenli Çeviri Fonksiyonu (deep-translator) ------------
 def translate_text_safe(text):
     if not text or str(text).strip() == "":
         return ""
     try:
-        return translator.translate(str(text))
-    except Exception:
+        return GoogleTranslator(source='en', target='tr').translate(str(text))
+    except Exception as e:
+        print(f"Çeviri hatası: {e}")
         return str(text)
 
 # ------------ Progres bar ve ETA ------------
@@ -105,10 +106,13 @@ async def process_collection_interactive(collection, name, message, start_msg_id
             done += 1
             elapsed = time.time() - start_time
 
-        # Mesaj güncelle
-        bar_eta = progress_bar_eta(done, total, elapsed)
-        text = f"{name}: {done}/{total} içerik işlendi {bar_eta}\nKalan: {total - done}, Hatalar: {errors}"
-        await message.edit_text(text)
+        # Mesaj güncelle (aynı içerikse Telegram hatası vermemesi için try-except)
+        try:
+            bar_eta = progress_bar_eta(done, total, elapsed)
+            text = f"{name}: {done}/{total} içerik işlendi {bar_eta}\nKalan: {total - done}, Hatalar: {errors}"
+            await message.edit_text(text)
+        except Exception:
+            pass
 
     elapsed_time = round(time.time() - start_time, 2)
     return total, done, errors, elapsed_time
@@ -116,6 +120,7 @@ async def process_collection_interactive(collection, name, message, start_msg_id
 # ------------ /cevir Komutu (Interaktif) ------------
 @Client.on_message(filters.command("cevir") & filters.private & CustomFilters.owner)
 async def turkce_icerik(client: Client, message: Message):
+    # Başlatma mesajı
     start_msg = await message.reply_text(
         "🇹🇷 Film ve dizi açıklamaları Türkçeye çevriliyor…\nİlerleme tek mesajda gösterilecektir.",
         parse_mode=enums.ParseMode.MARKDOWN
