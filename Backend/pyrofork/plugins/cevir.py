@@ -49,21 +49,20 @@ def translate_text_safe(text):
         return str(text)
 
 # ------------ Progres bar ------------
-def progress_bar_eta(current, total, bar_length=12):
+def progress_bar(current, total, bar_length=12):
     if total == 0:
-        return "[⬡" + "⬡"*(bar_length-1) + "] 0%"
+        return "[⬡" + "⬡"*(bar_length-1) + "] 0.00%"
     percent = (current / total) * 100
     filled_length = int(bar_length * current // total)
     bar = "⬢" * filled_length + "⬡" * (bar_length - filled_length)
     return f"[{bar}] {percent:.2f}%"
 
 # ------------ Koleksiyon İşleyici ------------
-async def process_collection_interactive(collection, name, message, start_msg_id):
+async def process_collection_interactive(collection, name, message):
     data = list(collection.find({}))
     total = len(data)
     done = 0
     errors = 0
-
     start_time = time.time()
 
     while done < total:
@@ -95,11 +94,10 @@ async def process_collection_interactive(collection, name, message, start_msg_id
                 print(f"Hata: {e}")
 
             done += 1
-            elapsed = time.time() - start_time
 
         # Mesaj güncelle
-        bar_eta = progress_bar_eta(done, total)
-        text = f"{name}: {done}/{total} içerik işlendi {bar_eta}\nKalan: {total - done}, Hatalar: {errors}"
+        bar = progress_bar(done, total)
+        text = f"{name}: {done}/{total}\n{bar}\nKalan: {total - done}, Hatalar: {errors}"
         try:
             await message.edit_text(text)
         except Exception:
@@ -118,12 +116,12 @@ async def turkce_icerik(client: Client, message: Message):
 
     # Filmler
     movie_total, movie_done, movie_errors, movie_time = await process_collection_interactive(
-        movie_col, "Filmler", start_msg, start_msg.id
+        movie_col, "Filmler", start_msg
     )
 
     # Diziler
     series_total, series_done, series_errors, series_time = await process_collection_interactive(
-        series_col, "Diziler", start_msg, start_msg.id
+        series_col, "Diziler", start_msg
     )
 
     # -------- Özet --------
@@ -135,14 +133,9 @@ async def turkce_icerik(client: Client, message: Message):
 
     summary = (
         "🎉 *Film & Dizi Türkçeleştirme Sonuçları*\n\n"
-        "──────────────────────────────\n"
-        f"📌 Filmler\nToplam içerik : {movie_total}\nİşlenen      : {movie_done}\nBaşarılı     : {movie_done - movie_errors}\nHatalı       : {movie_errors}\nSüre         : {movie_time} sn\n"
-        "──────────────────────────────\n"
-        f"📌 Diziler\nToplam içerik : {series_total}\nİşlenen      : {series_done}\nBaşarılı     : {series_done - series_errors}\nHatalı       : {series_errors}\nSüre         : {series_time} sn\n"
-        "──────────────────────────────\n"
+        f"📌 Filmler: {movie_done}/{movie_total}\n{progress_bar(movie_done, movie_total)}\nKalan: {movie_total - movie_done}, Hatalar: {movie_errors}\n\n"
+        f"📌 Diziler: {series_done}/{series_total}\n{progress_bar(series_done, series_total)}\nKalan: {series_total - series_done}, Hatalar: {series_errors}\n\n"
         f"📊 Genel Özet\nToplam içerik : {total_all}\nBaşarılı     : {done_all - errors_all}\nHatalı       : {errors_all}\nKalan        : {remaining_all}\nToplam süre  : {total_time} sn\n"
-        "──────────────────────────────\n"
-        "✅ Tüm içerikler başarıyla Türkçeye çevrildi!"
     )
 
     await start_msg.edit_text(summary, parse_mode=enums.ParseMode.MARKDOWN)
