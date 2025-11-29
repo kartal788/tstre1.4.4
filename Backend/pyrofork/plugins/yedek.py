@@ -1,65 +1,31 @@
 from pyrogram import Client, filters
-from Backend.helper.custom_filter import CustomFilters
 from pyrogram.types import Message
-from pymongo import MongoClient
-import os
-import importlib.util
+from psutil import virtual_memory, cpu_percent, disk_usage
+from time import time
 
-CONFIG_PATH = "/home/debian/tstre1.4.4/config.py"
+# Bot başlama zamanı (genellikle main.py veya init dosyasında)
+bot_start_time = time()
 
-def read_database_from_config():
-    """config.py içinden DATABASE değişkenini al"""
-    if not os.path.exists(CONFIG_PATH):
-        return None
+# Disk kullanımını kontrol etmek için dizin (root veya download klasörü)
+DOWNLOAD_DIR = "/"
 
-    spec = importlib.util.spec_from_file_location("config", CONFIG_PATH)
-    config = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(config)
-
-    return getattr(config, "DATABASE", None)
-
-def get_db_urls():
-    """Önce config.py → yoksa env"""
-    db_raw = read_database_from_config()
-    if not db_raw:
-        db_raw = os.getenv("DATABASE", "")
-
-    return [u.strip() for u in db_raw.split(",") if u.strip()]
-
-def get_db_stats(url):
-    """MongoDB istatistiklerini al"""
-    client = MongoClient(url)
-    db_name = client.list_database_names()[0] if client.list_database_names() else None
-    if not db_name:
-        return None
-
-    db = client[db_name]
-    movies_count = db["movie"].count_documents({})
-    series_count = db["tv"].count_documents({})
-    stats = db.command("dbstats")
-    storage_mb = round(stats["storageSize"] / (1024 * 1024), 2)
-
-    return movies_count, series_count, storage_mb
-
-@Client.on_message(filters.command("yedek") & filters.private & CustomFilters.owner)
-async def database_status(_, message: Message):
+@Client.on_message(filters.command("yedek") & filters.private)
+async def system_status(client: Client, message: Message):
     try:
-        db_urls = get_db_urls()
-        if len(db_urls) < 2:
-            return await message.reply_text("⚠️ İki adet DATABASE URL bulunamadı.")
+        # Sistem bilgilerini al
+        cpu = cpu_percent()
+        ram = virtual_memory().percent
+        free_disk = round(disk_usage(DOWNLOAD_DIR).free / (1024 ** 3), 2)  # GB cinsinden
+        uptime_sec = time() - bot_start_time
+        uptime = f"{int(uptime_sec // 3600)}h{int((uptime_sec % 3600) // 60)}m"
 
-        stats = get_db_stats(db_urls[1])
-        if not stats:
-            return await message.reply_text("⚠️ Database bilgisi alınamadı.")
-
-        movies_count, series_count, storage_mb = stats
-
+        # Mesajı hazırla
         text = (
-            f"Filmler:           {movies_count:,}\n"
-            f"Diziler:            {series_count:,}\n"
-            f"Depolama:     {storage_mb} MB"
+            f"CPU: {cpu}% | FREE: {free_disk}GB\n"
+            f"RAM: {ram}% | UPTIME: {uptime}"
         )
 
+        # Cevap gönder
         await message.reply_text(text)
 
     except Exception as e:
