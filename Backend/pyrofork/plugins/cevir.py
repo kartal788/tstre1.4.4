@@ -2,7 +2,7 @@ from pyrogram import Client, filters, enums
 from pyrogram.types import Message
 from Backend.helper.custom_filter import CustomFilters
 from pymongo import MongoClient
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 import os
 import importlib.util
 import time
@@ -38,14 +38,15 @@ db = client[db_name]
 movie_col = db["movie"]
 series_col = db["tv"]
 
-translator = Translator()
+# ------------ Deep Translator ------------
+translator = GoogleTranslator(source='en', target='tr')
 
 # ------------ Güvenli Çeviri Fonksiyonu ------------
 def translate_text_safe(text):
     if not text or str(text).strip() == "":
         return ""
     try:
-        return translator.translate(str(text), src="en", dest="tr").text
+        return translator.translate(str(text))
     except Exception:
         return str(text)
 
@@ -111,7 +112,7 @@ async def process_collection_interactive(collection, name, message, start_msg_id
     elapsed_time = round(time.time() - start_time, 2)
     return total, done, errors, elapsed_time
 
-# ------------ /turkceicerik Komutu (Interaktif) ------------
+# ------------ /cevir Komutu (Interaktif) ------------
 @Client.on_message(filters.command("cevir") & filters.private & CustomFilters.owner)
 async def turkce_icerik(client: Client, message: Message):
     # Başlatma mesajı
