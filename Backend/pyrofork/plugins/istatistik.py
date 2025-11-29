@@ -37,7 +37,7 @@ async def send_stats(client: Client, message: Message):
         stats_text = (
             f"⌬ İstatistik\n"
             f"│\n"
-            f"┠ Filmler:  {movies_count}\n"
+            f"┠ Filmler: {movies_count}\n"
             f"┠ Diziler:  {series_count}\n"
             f"┖Depolama: {storage_mb} MB\n\n"
             f"┟CPU {cpu}% | Boş Alan {free_disk}GB [{disk_percent}%]\n"
