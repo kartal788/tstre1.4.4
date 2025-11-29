@@ -2,25 +2,31 @@ from pyrogram import filters, Client
 from pyrogram.types import Message
 from Backend.helper.custom_filter import CustomFilters
 import os
+from pymongo import MongoClient
 
 @Client.on_message(filters.command('yedek') & filters.private & CustomFilters.owner, group=10)
-async def send_backup(client: Client, message: Message):
+async def show_db_usage(client: Client, message: Message):
     """
-    /yedek komutu ile mevcut .env dosyasını Telegram'a gönderir.
-    Eğer platformdaki env variables kullanılıyorsa, geçici olarak bir .env dosyası oluşturup gönderir.
+    /yedek komutu ile MongoDB database'in kullandığı depolama miktarını gösterir.
+    Config dosyası artık gönderilmez.
     """
     try:
-        config_path = "Backend/config.env"
+        # MongoDB bağlantı bilgisi (.env veya environment variables)
+        mongo_url = os.environ.get("DATABASE_URL")
+        if not mongo_url:
+            await message.reply_text("⚠️ MongoDB bağlantısı bulunamadı.")
+            return
 
-        # Eğer fiziksel dosya yoksa, environment variables'dan oluştur
-        if not os.path.exists(config_path):
-            with open(config_path, "w") as f:
-                for key, value in os.environ.items():
-                    f.write(f"{key}={value}\n")
+        # MongoDB client oluştur
+        mongo_client = MongoClient(mongo_url)
+        db_name = mongo_client.get_default_database().name
 
-        await message.reply_document(
-            document=config_path,
-            caption="📄 İşte config/env yedeğiniz:",
+        # Database istatistiklerini al
+        db_stats = mongo_client[db_name].command("dbstats")
+        used_storage_mb = db_stats.get("storageSize", 0) / (1024 * 1024)  # byte -> MB
+
+        await message.reply_text(
+            f"💾 MongoDB '{db_name}' database depolama kullanımı: {used_storage_mb:.2f} MB",
             quote=True
         )
 
