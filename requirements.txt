@@ -10,4 +10,4 @@ tgcrypto
 themoviedb
 uvicorn
 psutil
-googletrans==4.0.0-rc1
+googletrans-new==1.1.9
