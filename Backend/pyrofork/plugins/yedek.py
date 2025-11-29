@@ -4,18 +4,19 @@ from Backend.helper.custom_filter import CustomFilters
 import os
 from pymongo import MongoClient
 
-# config.py varsa DATABASE değişkenini import etmeye çalış
 try:
     from Backend.config import DATABASE as CONFIG_DATABASE
 except ImportError:
     CONFIG_DATABASE = None
 
 @Client.on_message(filters.command('yedek') & filters.private & CustomFilters.owner, group=10)
-async def show_db_storage(client: Client, message: Message):
+async def show_second_db_info(client: Client, message: Message):
     """
-    /yedek komutu ile DATABASE değişkenindeki her MongoDB URL’inin
-    kullandığı toplam depolama alanını yazdırır.
-    Database adı URL’de yoksa ilk database otomatik seçilir.
+    /yedek komutu ile ikinci database'in:
+    - movies koleksiyonundaki kayıt sayısı
+    - tv koleksiyonundaki kayıt sayısı
+    - toplam kullanılan depolama
+    bilgilerini gösterir.
     """
     try:
         # DATABASE URL’lerini al
@@ -24,35 +25,44 @@ async def show_db_storage(client: Client, message: Message):
             await message.reply_text("⚠️ MongoDB bağlantısı config/env değişkenlerinde bulunamadı.")
             return
 
-        # Virgülle ayrılmış URL’leri listele
+        # Virgülle ayrılmış URL’leri listele ve sadece ikinciyi al
         mongo_urls = [url.strip() for url in databases.split(",") if url.strip()]
-
-        if not mongo_urls:
-            await message.reply_text("⚠️ Database URL bulunamadı.")
+        if len(mongo_urls) < 2:
+            await message.reply_text("⚠️ İkinci database URL bulunamadı.")
             return
 
-        messages = []
-        for i, url in enumerate(mongo_urls, 1):
-            try:
-                mongo_client = MongoClient(url)
-                
-                # URL’de default database yoksa ilk DB’yi al
-                db_names = mongo_client.list_database_names()
-                if not db_names:
-                    messages.append(f"⚠️ Database {i} bağlantı başarılı ama database bulunamadı.")
-                    continue
-                db_name = db_names[0]  # ilk database
-                db = mongo_client[db_name]
+        url = mongo_urls[1]  # sadece ikinci database
+        try:
+            mongo_client = MongoClient(url)
 
-                db_stats = db.command("dbstats")
-                used_storage_mb = db_stats.get("storageSize", 0) / (1024 * 1024)
+            # Database adı URL’de yoksa ilk DB’yi seç
+            db_names = mongo_client.list_database_names()
+            if not db_names:
+                await message.reply_text("⚠️ Database bağlantısı başarılı ama database bulunamadı.")
+                return
 
-                messages.append(f"💾 Database {i} ('{db_name}') kullanımı: {used_storage_mb:.2f} MB")
+            db_name = db_names[0]
+            db = mongo_client[db_name]
 
-            except Exception as e:
-                messages.append(f"⚠️ Database {i} bağlantı hatası: {e}")
+            # Koleksiyon sayıları
+            movies_count = db["movies"].count_documents({})
+            tv_count = db["tv"].count_documents({})
 
-        await message.reply_text("\n".join(messages), quote=True)
+            # Kullanılan depolama
+            db_stats = db.command("dbstats")
+            used_storage_mb = db_stats.get("storageSize", 0) / (1024 * 1024)
+
+            # Mesajı hazırla
+            msg = (
+                f"Filmler: {movies_count:,}\n"
+                f"Diziler: {tv_count:,}\n"
+                f"Depolama: {used_storage_mb:.2f} MB"
+            )
+
+            await message.reply_text(msg, quote=True)
+
+        except Exception as e:
+            await message.reply_text(f"⚠️ Database bağlantı hatası: {e}")
 
     except Exception as e:
         await message.reply_text(f"⚠️ Hata: {e}")
