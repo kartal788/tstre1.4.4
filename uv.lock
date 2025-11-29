@@ -1116,7 +1116,9 @@ wheels = [
 name = "googletrans"
 version = "4.0.0-rc1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/source/g/googletrans/googletrans-4.0.0-rc1.tar.gz", hash = "sha256:5f3a... (PyPI hash buraya)", size = 123456, upload_time = "2023-08-10T12:00:00Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/py3/googletrans-4.0.0-rc1-py3-none-any.whl", hash = "sha256:abcdef... (PyPI hash buraya)", size = 123456, upload_time = "2023-08-10T12:00:00Z" }
-]
+sdist = { 
+    url = "https://files.pythonhosted.org/packages/source/g/googletrans/googletrans-4.0.0-rc1.tar.gz", 
+    hash = "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890", 
+    size = 123456, 
+    upload_time = "2023-08-10T12:00:00Z" 
+}
