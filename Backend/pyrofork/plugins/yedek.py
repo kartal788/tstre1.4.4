@@ -1,4 +1,3 @@
-
 from pyrogram import filters, Client
 from pyrogram.types import Message
 from Backend.helper.custom_filter import CustomFilters
@@ -7,17 +6,21 @@ import os
 @Client.on_message(filters.command('yedek') & filters.private & CustomFilters.owner, group=10)
 async def send_backup(client: Client, message: Message):
     """
-    /yedek komutu ile config.env dosyasını Telegram'a gönderir
+    /yedek komutu ile mevcut .env dosyasını Telegram'a gönderir.
+    Eğer platformdaki env variables kullanılıyorsa, geçici olarak bir .env dosyası oluşturup gönderir.
     """
     try:
-        config_path = "Backend/config.env"  # Dosyanın gerçek yolu
+        config_path = "Backend/config.env"
+
+        # Eğer fiziksel dosya yoksa, environment variables'dan oluştur
         if not os.path.exists(config_path):
-            await message.reply_text("⚠️ Config dosyası bulunamadı.")
-            return
+            with open(config_path, "w") as f:
+                for key, value in os.environ.items():
+                    f.write(f"{key}={value}\n")
 
         await message.reply_document(
             document=config_path,
-            caption="📄 İşte config.env dosyanız:",
+            caption="📄 İşte config/env yedeğiniz:",
             quote=True
         )
 
