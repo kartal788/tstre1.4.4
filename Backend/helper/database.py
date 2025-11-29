@@ -60,9 +60,6 @@ class Database:
                 self.current_db_index = state["current_index"]
 
             LOGGER.info(f"Active storage DB: storage_{self.current_db_index}")
-            
-            # İSTATİSTİK ENTEGRASYONU İÇİN EKLENDİ
-            DBManager.set_instance(self) 
 
         except Exception as e:
             LOGGER.error(f"Database connection error: {e}")
@@ -433,7 +430,7 @@ class Database:
             LOGGER.error(f"Failed to update TV show {tmdb_id} in {existing_db_key}: {e}")
             if any(keyword in str(e).lower() for keyword in ["storage", "quota"]):
                 return await self._handle_storage_error(self.update_tv_show, tv_show_data, total_storage_dbs=total_storage_dbs)
-        
+    
     async def sort_movies(self, sort_params, page, page_size, genre_filter=None):
         sort_dict = self._get_sort_dict(sort_params)
         filter_dict = {"genres": {"$in": [genre_filter]}} if genre_filter else {}
@@ -739,73 +736,133 @@ class Database:
         
         original_len = len(movie["telegram"])
         movie["telegram"] = [q for q in movie["telegram"] if q.get("quality") != quality]
-
-        # Eksik kalan kod parçası buraya eklendi (Geri kalan kodun doğru çalıştığı varsayılıyor)
+        
         if len(movie["telegram"]) == original_len:
-            return False # Kalite bulunamadı
-        
-        if not movie["telegram"]:
-            # Eğer son kalite ise tüm dökümanı sil
-            return await self.delete_document("Movie", tmdb_id, db_index)
-
-        # Kalite silindikten sonra dökümanı güncelle
-        try:
-            await self.dbs[db_key]["movie"].replace_one({"tmdb_id": tmdb_id}, movie)
-            return True
-        except Exception as e:
-            LOGGER.error(f"Failed to delete quality {quality} for movie {tmdb_id}: {e}")
             return False
-
-
-# ----------------------------------------------------
-# DB Manager - STATİK ERIŞIM NOKTALARI (stats_utils için)
-# ----------------------------------------------------
-
-class DBManager:
-    """
-    Database sınıfının tek bir örneğini (singleton) ve tüm aktif storage DB 
-    örneklerini stats_utils.py gibi modüllere sağlamak için bir statik sınıf.
-    """
-    _instance: Optional['Database'] = None
-    
-    @staticmethod
-    def set_instance(instance: 'Database'):
-        """connect metodu çağrıldıktan sonra Database örneğini kaydeder."""
-        DBManager._instance = instance
         
-    @staticmethod
-    def get_instance() -> 'Database':
-        """Ana (Tracking) Database örneğini döndürür."""
-        if DBManager._instance is None:
-            raise Exception("Database sınıfı henüz başlatılmadı veya bağlanmadı.")
-        return DBManager._instance
-    
-    @staticmethod
-    def get_all_instances() -> List[Any]:
-        """
-        stats_utils'un ihtiyaç duyduğu tüm aktif storage DB örneklerine erişim sağlayan 
-        Proxy (Vekil) nesneleri döndürür.
-        """
-        if DBManager._instance is None:
-            LOGGER.warning("DBManager instance is None. Returning empty list.")
-            return []
-            
-        instance = DBManager._instance
-        storage_dbs = []
+        movie['updated_on'] = datetime.utcnow()
+        result = await self.dbs[db_key]["movie"].replace_one({"tmdb_id": tmdb_id}, movie)
+        return result.modified_count > 0
+
+    async def delete_tv_episode(self, tmdb_id: int, db_index: int, season_number: int, episode_number: int) -> bool:
+        db_key = f"storage_{db_index}"
+        tv = await self.dbs[db_key]["tv"].find_one({"tmdb_id": tmdb_id})
         
-        # storage_1, storage_2 vb. anahtarları olan tüm storage bağlantılarını döngüye al
-        for key, client in instance.clients.items():
-            if key.startswith("storage_"):
-                # stats_utils'un beklediği .client, .db ve .name metotlarını taklit eden proxy oluşturma
-                db_name = instance.db_name
-                db_proxy = type('DBProxy', (object,), {
-                    'client': client,
-                    'name': db_name,
-                    # stats_utils'un beklediği Movie ve TVShow koleksiyonlarına erişim
-                    # Bu, db_instance.Movie.count_documents({}) çağrısının çalışmasını sağlar
-                    'Movie': client[db_name]["movie"],
-                    'TVShow': client[db_name]["tv"],
-                })()
-                storage_dbs.append(db_proxy)
+        if not tv or "seasons" not in tv:
+            return False
+        
+        found = False
+        for season in tv["seasons"]:
+            if season.get("season_number") == season_number:
+                for ep in season["episodes"]:
+                    if ep.get("episode_number") == episode_number:
+                        for quality in ep.get("telegram", []):
+                            try:
+                                old_id = quality.get("id")
+                                if old_id:
+                                    decoded_data = await decode_string(old_id)
+                                    chat_id = int(f"-100{decoded_data['chat_id']}")
+                                    msg_id = int(decoded_data['msg_id'])
+                                    create_task(delete_message(chat_id, msg_id))
+                            except Exception as e:
+                                LOGGER.error(f"Failed to queue file for deletion: {e}")
+                        break
                 
-        return storage_dbs
+                original_len = len(season["episodes"])
+                season["episodes"] = [ep for ep in season["episodes"] if ep.get("episode_number") != episode_number]
+                found = original_len > len(season["episodes"])
+                break
+        
+        if not found:
+            return False
+        
+        tv['updated_on'] = datetime.utcnow()
+        result = await self.dbs[db_key]["tv"].replace_one({"tmdb_id": tmdb_id}, tv)
+        return result.modified_count > 0
+
+    async def delete_tv_season(self, tmdb_id: int, db_index: int, season_number: int) -> bool:
+        db_key = f"storage_{db_index}"
+        tv = await self.dbs[db_key]["tv"].find_one({"tmdb_id": tmdb_id})
+        
+        if not tv or "seasons" not in tv:
+            return False
+        
+        for season in tv["seasons"]:
+            if season.get("season_number") == season_number:
+                for episode in season.get("episodes", []):
+                    for quality in episode.get("telegram", []):
+                        try:
+                            old_id = quality.get("id")
+                            if old_id:
+                                decoded_data = await decode_string(old_id)
+                                chat_id = int(f"-100{decoded_data['chat_id']}")
+                                msg_id = int(decoded_data['msg_id'])
+                                create_task(delete_message(chat_id, msg_id))
+                        except Exception as e:
+                            LOGGER.error(f"Failed to queue file for deletion: {e}")
+                break
+        
+        original_len = len(tv["seasons"])
+        tv["seasons"] = [s for s in tv["seasons"] if s.get("season_number") != season_number]
+        
+        if len(tv["seasons"]) == original_len:
+            return False
+        
+        tv['updated_on'] = datetime.utcnow()
+        result = await self.dbs[db_key]["tv"].replace_one({"tmdb_id": tmdb_id}, tv)
+        return result.modified_count > 0
+
+    async def delete_tv_quality(self, tmdb_id: int, db_index: int, season_number: int, episode_number: int, quality: str) -> bool:
+        db_key = f"storage_{db_index}"
+        tv = await self.dbs[db_key]["tv"].find_one({"tmdb_id": tmdb_id})
+        
+        if not tv or "seasons" not in tv:
+            return False
+        
+        found = False
+        for season in tv["seasons"]:
+            if season.get("season_number") == season_number:
+                for episode in season["episodes"]:
+                    if episode.get("episode_number") == episode_number and "telegram" in episode:
+                        for q in episode["telegram"]:
+                            if q.get("quality") == quality:
+                                try:
+                                    old_id = q.get("id")
+                                    if old_id:
+                                        decoded_data = await decode_string(old_id)
+                                        chat_id = int(f"-100{decoded_data['chat_id']}")
+                                        msg_id = int(decoded_data['msg_id'])
+                                        create_task(delete_message(chat_id, msg_id))
+                                except Exception as e:
+                                    LOGGER.error(f"Failed to queue file for deletion: {e}")
+                                break
+                        
+                        original_len = len(episode["telegram"])
+                        episode["telegram"] = [q for q in episode["telegram"] if q.get("quality") != quality]
+                        found = original_len > len(episode["telegram"])
+                        break
+        
+        if not found:
+            return False
+        tv['updated_on'] = datetime.utcnow()
+        result = await self.dbs[db_key]["tv"].replace_one({"tmdb_id": tmdb_id}, tv)
+        return result.modified_count > 0
+
+
+    # Get per-DB statistics (movies, tv shows, used size, etc.)
+    async def get_database_stats(self):
+        stats = []
+        for key in self.dbs.keys():
+            if key.startswith("storage_"):
+                db = self.dbs[key]
+                movie_count = await db["movie"].count_documents({})
+                tv_count = await db["tv"].count_documents({})
+                db_stats = await db.command("dbstats")
+                stats.append({
+                    "db_name": key,
+                    "movie_count": movie_count,
+                    "tv_count": tv_count,
+                    "storageSize": db_stats.get("storageSize", 0),
+                    "dataSize": db_stats.get("dataSize", 0)
+                })
+        return stats
