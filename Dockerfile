@@ -15,6 +15,10 @@ ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en
 ENV LC_ALL en_US.UTF-8
 
+# Poetry / Unstable (uv) kur
+RUN curl -sSf https://install.python-poetry.org | python3 -
+ENV PATH="/root/.local/bin:$PATH"
+
 # Çalışma dizini
 WORKDIR /app
 
@@ -22,7 +26,6 @@ WORKDIR /app
 COPY . .
 
 # UV ortamını kur ve bağımlılıkları yükle
-# Eğer uv.lock güncel değilse --locked bayrağını kaldırıyoruz
 RUN uv sync
 
 # start.sh dosyasına çalıştırma izni ver
