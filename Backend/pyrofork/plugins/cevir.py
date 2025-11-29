@@ -98,7 +98,7 @@ async def process_collection_interactive(collection, name, message):
             current_time = time.time()
 
             # Mesaj güncellemesi: en az 30 sn geçtiyse veya tamamlandıysa
-            if current_time - last_update > 15 or done == total:
+            if current_time - last_update > 30 or done == total:
                 bar = progress_bar(done, total)
                 text = f"{name}: {done}/{total}\n{bar}\nKalan: {total - done}, Hatalar: {errors}"
                 try:
