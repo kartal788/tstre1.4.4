@@ -5,11 +5,10 @@ ENV PYTHONUNBUFFERED=1
 ENV LANG=en_US.UTF-8
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Sistem bağımlılıklarını yükle
+# Sistem bağımlılıkları
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential \
-        bash \
         git \
         curl \
         ca-certificates \
@@ -17,17 +16,19 @@ RUN apt-get update && \
     locale-gen en_US.UTF-8 && \
     rm -rf /var/lib/apt/lists/*
 
-# Çalışma dizini
 WORKDIR /app
 
-# Kodları kopyala
+# Projeyi kopyala
 COPY . .
 
-# UV ortamını kur ve bağımlılıkları yükle
-RUN uv sync --no-lock
+# uv.lock oluştur
+RUN uv lock
+
+# Sanal ortamı kur ve bağımlılıkları yükle
+RUN uv sync
 
 # start.sh çalıştırılabilir yap
 RUN chmod +x start.sh
 
-# Başlatma komutu
+# Container başlatıldığında çalışacak komut
 CMD ["bash", "start.sh"]
