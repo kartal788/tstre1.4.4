@@ -10,3 +10,4 @@ tgcrypto
 themoviedb
 uvicorn
 psutil
+git+https://github.com/ssut/py-googletrans.git@v4.0.0
