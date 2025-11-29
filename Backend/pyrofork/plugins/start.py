@@ -38,22 +38,23 @@ def get_db_stats(url):
     series_count = db["tv"].count_documents({})
     stats = db.command("dbstats")
     storage_mb = round(stats["storageSize"] / (1024 * 1024), 2)
-    storage_percent = round((storage_mb / TOTAL_STORAGE_MB) * 100, 2)
+    storage_percent = round((disk_usage(DOWNLOAD_DIR).free / disk_usage(DOWNLOAD_DIR).total) * 100, 1)
     return movies_count, series_count, storage_mb, storage_percent
 
 # ---------------- Sistem Durumu Fonksiyonu ----------------
 def get_system_status():
-    cpu = cpu_percent(interval=1)
-    ram = virtual_memory().percent
+    cpu = round(cpu_percent(interval=1), 1)
+    ram = round(virtual_memory().percent, 1)
     disk = disk_usage(DOWNLOAD_DIR)
-    free_disk = round(disk.free / (1024 ** 3), 2)  # Sadece boş alan GB
-    # total_disk artık gerek yok
-    # disk_percent kaldırıldı
+    free_disk = round(disk.free / (1024 ** 3), 2)  # GB
+    disk_percent = round((disk.free / disk.total) * 100, 1)
+    
     uptime_sec = int(time() - bot_start_time)
     hours, remainder = divmod(uptime_sec, 3600)
     minutes, seconds = divmod(remainder, 60)
     uptime = f"{hours}h{minutes}m{seconds}s"
-    return cpu, ram, free_disk, uptime
+    
+    return cpu, ram, free_disk, disk_percent, uptime
 
 # ---------------- /start Komutu ----------------
 @Client.on_message(filters.command('start') & filters.private & CustomFilters.owner, group=10)
@@ -76,13 +77,10 @@ async def send_start_message(client: Client, message: Message):
                 )
 
         # Sistem stats
-        cpu, ram, free_disk, uptime = get_system_status()
+        cpu, ram, free_disk, disk_percent, uptime = get_system_status()
         system_text = (
-            f"\n\nBot Durumu:"
-            f"\nCPU → {cpu}%"
-            f"\nRAM → {ram}%"
-            f"\nDisk → {free_disk} GB"
-            f"\nUptime → {uptime}"
+            f"\n\n CPU → {cpu}% | F → {free_disk}GB [{disk_percent}%]"
+            f"\n RAM → {ram}% | UP → {uptime}"
         )
 
         # Mesaj gönder
