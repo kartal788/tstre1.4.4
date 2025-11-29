@@ -1,17 +1,18 @@
 from pyrogram import filters, Client, enums
 from Backend.helper.custom_filter import CustomFilters
 from pyrogram.types import Message
-from Backend.config import Telegram
+from Backend.config import Telegram, Config
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
-# MongoDB bağlantısı
-mongo = AsyncIOMotorClient("YOUR_MONGO_URI")
+# MongoDB bağlantısı artık doğru kaynaktan alınıyor
+mongo = AsyncIOMotorClient(Config.DATABASE)
 
 
 async def get_database_stats():
     stats = []
 
+    # storage_* veritabanlarını tara
     for name in await mongo.list_database_names():
         if name.startswith("storage_"):
             database = mongo[name]
@@ -33,7 +34,7 @@ async def get_database_stats():
 @Client.on_message(filters.command('start') & filters.private & CustomFilters.owner, group=10)
 async def send_start_message(client: Client, message: Message):
     try:
-        # ---- STATS ----
+        # DB İSTATİSTİKLERİ
         db_stats = await get_database_stats()
 
         total_movies = sum(item["movie_count"] for item in db_stats)
@@ -42,11 +43,11 @@ async def send_start_message(client: Client, message: Message):
 
         storage_mb = round(total_storage / 1024 / 1024, 2)
 
-        # ---- STREMIO URL ----
+        # ADDON URL
         base_url = Telegram.BASE_URL
         addon_url = f"{base_url}/stremio/manifest.json"
 
-        # ---- MESSAGE ----
+        # MESAJ
         await message.reply_text(
             f"""
 Eklentiyi Stremio’ya yüklemek için aşağıdaki adresi kopyalayın ve Eklentiler bölümüne ekleyin.
