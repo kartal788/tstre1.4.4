@@ -48,4 +48,24 @@ async def download_database(client: Client, message: Message):
             "mongodump",
             "--uri", MONGO_URL,
             "--db", db_name,
-            "-
+            "--out", dump_dir
+        ], check=True)
+
+        subprocess.run([
+            "zip", "-r", archive_path, dump_dir
+        ], check=True)
+
+        await client.send_document(
+            chat_id=message.chat.id,
+            document=archive_path,
+            caption=f"📂 Veritabanı: {db_name} ({timestamp})"
+        )
+
+        await start_msg.delete()
+    except Exception as e:
+        await start_msg.edit_text(f"❌ Database indirilemedi.\nHata: {e}")
+    finally:
+        if os.path.exists(dump_dir):
+            subprocess.run(["rm", "-rf", dump_dir])
+        if os.path.exists(archive_path):
+            os.remove(archive_path)
