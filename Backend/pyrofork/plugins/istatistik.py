@@ -58,7 +58,7 @@ def get_system_status():
     uptime_sec = int(time() - bot_start_time)
     h, r = divmod(uptime_sec, 3600)
     m, s = divmod(r, 60)
-    uptime = f"{h}h{m}m{s}s"
+    uptime = f"{h}s{m}d{s}s"
 
     return cpu, ram, free_disk, free_percent, uptime
 
@@ -82,7 +82,7 @@ async def send_statistics(client: Client, message: Message):
             f"┠ <b>Filmler:</b> {movies}\n"
             f"┠ <b>Diziler:</b> {series}\n"
             f"┖ <b>Depolama:</b> {storage_mb} MB\n\n"
-            f"┟ <b>CPU</b> → {cpu}% | <b>Boş Alan</b> → {free_disk}GB [{free_percent}%]\n"
+            f"┟ <b>CPU</b> → {cpu}% | <b>Boş</b> → {free_disk}GB [{free_percent}%]\n"
             f"┖ <b>RAM</b> → {ram}% | <b>UP</b> → {uptime}"
         )
 
