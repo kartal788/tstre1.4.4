@@ -4,6 +4,7 @@ from Backend.helper.custom_filter import CustomFilters
 from pymongo import MongoClient
 import os
 import importlib.util
+import re
 
 # ------------ CONFIG/ENV'DEN ALMA ------------
 CONFIG_PATH = "/home/debian/dfbot/config.env"
@@ -43,35 +44,65 @@ async def send_m3u_file(client, message: Message):
         with open(file_path, "w", encoding="utf-8") as m3u:
             m3u.write("#EXTM3U\n")
 
-            # --- Filmler ---
+            # --------------------------------------------------------------------------------
+            #                                       FİLMLER
+            # --------------------------------------------------------------------------------
             for movie in db["movie"].find({}):
                 title = movie.get("title", "Unknown Movie")
                 logo = movie.get("poster", "")
-                genres = movie.get("genres", [])
                 telegram_files = movie.get("telegram", [])
 
                 for tg in telegram_files:
                     quality = tg.get("quality", "Unknown")
                     file_id = tg.get("id")
+                    file_name = tg.get("name", "")
                     if not file_id:
                         continue
+
                     url = f"{BASE_URL}/dl/{file_id}/video.mkv"
                     name = f"{title} [{quality}]"
 
-                    # Tür bazlı kategori
-                    if genres:
-                        for genre in genres:
-                            m3u.write(f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" group-title="{genre} Filmleri",{name}\n')
-                            m3u.write(f"{url}\n")
+                    # --- Yıl tespit ---
+                    year_match = re.search(r"\b(19\d{2}|20\d{2})\b", file_name)
+                    if year_match:
+                        year = int(year_match.group(1))
+                        if year < 1950:
+                            group = "1940’lar ve Öncesi Filmleri"
+                        elif 1950 <= year <= 1959:
+                            group = "1950’ler Filmleri"
+                        elif 1960 <= year <= 1969:
+                            group = "1960’lar Filmleri"
+                        elif 1970 <= year <= 1979:
+                            group = "1970’ler Filmleri"
+                        elif 1980 <= year <= 1989:
+                            group = "1980’ler Filmleri"
+                        elif 1990 <= year <= 1999:
+                            group = "1990’lar Filmleri"
+                        elif 2000 <= year <= 2009:
+                            group = "2000’ler Filmleri"
+                        elif 2010 <= year <= 2019:
+                            group = "2010’lar Filmleri"
+                        elif 2020 <= year <= 2029:
+                            group = "2020’ler Filmleri"
+                        else:
+                            group = "Filmler"
                     else:
-                        m3u.write(f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" group-title="Filmler",{name}\n')
-                        m3u.write(f"{url}\n")
+                        group = "Filmler"
 
-            # --- Diziler ---
+                    # M3U yaz
+                    m3u.write(
+                        f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" '
+                        f'group-title="{group}",{name}\n'
+                    )
+                    m3u.write(f"{url}\n")
+
+            # --------------------------------------------------------------------------------
+            #                                       DİZİLER
+            # --------------------------------------------------------------------------------
             for tv in db["tv"].find({}):
                 title = tv.get("title", "Unknown TV")
-                seasons = tv.get("seasons", [])
                 logo_tv = tv.get("poster", "")
+                seasons = tv.get("seasons", [])
 
                 for season in seasons:
                     season_number = season.get("season_number", 1)
@@ -85,14 +116,34 @@ async def send_m3u_file(client, message: Message):
                         for tg in telegram_files:
                             quality = tg.get("quality", "Unknown")
                             file_id = tg.get("id")
+                            file_name = tg.get("name", "").lower()
+
                             if not file_id:
                                 continue
+
                             url = f"{BASE_URL}/dl/{file_id}/video.mkv"
                             name = f"{title} S{season_number:02d}E{ep_number:02d} [{quality}]"
 
-                            # Tür bazlı kategori
-                            m3u.write(f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" group-title="Diziler",{name}\n')
+                            # --- Dizi platform kategorisi ---
+                            if "dsnp" in file_name:
+                                group = "Disney Dizileri"
+                            elif "nf" in file_name:
+                                group = "Netflix Dizileri"
+                            elif "exxen" in file_name:
+                                group = "Exxen Dizileri"
+                            elif "tabii" in file_name:
+                                group = "Tabii Dizileri"
+                            elif "hbo" in file_name or "hbomax" in file_name or "blutv" in file_name:
+                                group = "Hbo Dizileri"
+                            else:
+                                group = "Diziler"
+
+                            m3u.write(
+                                f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" '
+                                f'group-title="{group}",{name}\n'
+                            )
                             m3u.write(f"{url}\n")
+
 
         await client.send_document(
             chat_id=message.chat.id,
