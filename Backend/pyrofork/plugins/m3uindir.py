@@ -33,7 +33,7 @@ db_name = client_db.list_database_names()[0]
 db = client_db[db_name]
 
 # ------------ /m3uplus KOMUTU ------------
-@Client.on_message(filters.command("m3uplus") & filters.private & CustomFilters.owner)
+@Client.on_message(filters.command("m3uindir") & filters.private & CustomFilters.owner)
 async def send_m3u(client, message: Message):
     start_msg = await message.reply_text("📝 M3U dosyası hazırlanıyor, lütfen bekleyin...")
 
