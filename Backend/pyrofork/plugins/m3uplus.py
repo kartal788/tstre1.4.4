@@ -49,14 +49,12 @@ async def send_m3u(client, message: Message):
         with open(tmp_file_path, "w", encoding="utf-8") as m3u:
             m3u.write("#EXTM3U\n")
 
-            # --- Filmler ---
+            # --- Filmler (Movies grubu) ---
             for movie in db["movie"].find({}):
                 title = movie.get("title", "Unknown Movie")
                 logo = movie.get("poster", "")
                 group = "Movies"
                 telegram_files = movie.get("telegram", [])
-                if not telegram_files:
-                    continue
                 for tg in telegram_files:
                     quality = tg.get("quality", "Unknown")
                     file_id = tg.get("id")
@@ -67,14 +65,12 @@ async def send_m3u(client, message: Message):
                     m3u.write(f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" group-title="{group}",{name}\n')
                     m3u.write(f"{url}\n")
 
-            # --- Diziler ---
+            # --- Diziler (TV Shows grubu) ---
             for tv in db["tv"].find({}):
                 title = tv.get("title", "Unknown TV")
                 logo = tv.get("poster", "")
                 group = "TV Shows"
                 telegram_files = tv.get("telegram", [])
-                if not telegram_files:
-                    continue
                 for tg in telegram_files:
                     quality = tg.get("quality", "Unknown")
                     file_id = tg.get("id")
@@ -88,7 +84,7 @@ async def send_m3u(client, message: Message):
         await client.send_document(
             chat_id=message.chat.id,
             document=tmp_file_path,
-            caption="📂 Gelişmiş M3U dosyanız hazır!"
+            caption="📂 M3U dosyanız hazır!"
         )
         await start_msg.delete()
 
