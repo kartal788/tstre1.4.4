@@ -1,10 +1,9 @@
 from pyrogram import Client, filters
-from pyrogram.types import Message, BotCommand
+from pyrogram.types import Message
 from Backend.helper.custom_filter import CustomFilters
 from pymongo import MongoClient
 import os
 import importlib.util
-import tempfile
 
 # ------------ CONFIG/ENV'DEN ALMA ------------
 CONFIG_PATH = "/home/debian/dfbot/config.env"
@@ -48,17 +47,15 @@ PLATFORM_CATEGORIES = {
     "apple": "Apple Filmleri/Dizileri"
 }
 
-# ------------ /m3uplus KOMUTU ------------
-@Client.on_message(filters.command("m3uplus") & filters.private & CustomFilters.owner)
-async def send_m3u(client, message: Message):
-    start_msg = await message.reply_text("📝 M3U dosyası hazırlanıyor, lütfen bekleyin...")
+# ------------ /m3uindir KOMUTU ------------
+@Client.on_message(filters.command("m3uindir") & filters.private & CustomFilters.owner)
+async def send_m3u_file(client, message: Message):
+    start_msg = await message.reply_text("📝 filmlervediziler.m3u dosyası hazırlanıyor, lütfen bekleyin...")
 
-    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".m3u")
-    tmp_file_path = tmp_file.name
-    tmp_file.close()
+    file_path = "filmlervediziler.m3u"
 
     try:
-        with open(tmp_file_path, "w", encoding="utf-8") as m3u:
+        with open(file_path, "w", encoding="utf-8") as m3u:
             m3u.write("#EXTM3U\n")
 
             # --- Filmler ---
@@ -107,7 +104,6 @@ async def send_m3u(client, message: Message):
 
                     for ep in episodes:
                         ep_number = ep.get("episode_number", 1)
-                        ep_title = ep.get("title", f"{ep_number}")
                         logo = ep.get("episode_backdrop") or logo_tv
                         telegram_files = ep.get("telegram", [])
 
@@ -135,14 +131,10 @@ async def send_m3u(client, message: Message):
 
         await client.send_document(
             chat_id=message.chat.id,
-            document=tmp_file_path,
-            caption="📂 M3U dosyanız hazır!"
+            document=file_path,
+            caption="📂 filmlervediziler.m3u dosyanız hazır!"
         )
         await start_msg.delete()
 
     except Exception as e:
-        await start_msg.edit_text(f"❌ M3U dosyası oluşturulamadı.\nHata: {e}")
-
-    finally:
-        if os.path.exists(tmp_file_path):
-            os.remove(tmp_file_path)
+        await start_msg.edit_text(f"❌ Dosya oluşturulamadı.\nHata: {e}")
