@@ -1,4 +1,5 @@
 # yayin.py
+
 import os
 from pyrogram import Client, filters, enums
 from pyrogram.types import Message
@@ -11,51 +12,47 @@ API_ID = int(os.getenv("API_ID", 0))
 API_HASH = os.getenv("API_HASH", "")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 OWNER_ID = int(os.getenv("OWNER_ID", 0))
-BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")  # Stremio için kullanılabilir
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 
-# ---------------- Telegram Bot -----------------
-bot = Client("bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# ----------------- Telegram Bot -----------------
+app_bot = Client("bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# ---------------- Owner Filter -----------------
-def owner_only(_, __, message: Message):
-    return message.from_user and message.from_user.id == OWNER_ID
+# ----------------- Owner Filter -----------------
+from pyrogram.filters import Filter
 
-# ---------------- /yayin Komutu -----------------
-@bot.on_message(filters.command("yayin") & filters.private & filters.create(owner_only))
-async def start(client: Client, message: Message):
-    await message.reply_text(
-        f"Merhaba! Bana bir dosya gönder, sana Telegram linkini vereyim.\n\n"
-        f"Stremio Addon Linki: {BASE_URL}/stremio/manifest.json",
-        quote=True
-    )
+class OwnerFilter(Filter):
+    async def __call__(self, client, message: Message):
+        return message.from_user and message.from_user.id == OWNER_ID
 
-# ---------------- Dosya Mesajı -----------------
-@bot.on_message(
-    filters.private 
-    & (filters.document | filters.video | filters.audio) 
-    & filters.create(owner_only)
-)
-async def file_handler(client: Client, message: Message):
+OwnerOnly = OwnerFilter()
+
+# ----------------- /yayin Komutu -----------------
+@app_bot.on_message(filters.command("yayin") & filters.private & OwnerOnly)
+async def yayin_handler(client: Client, message: Message):
     try:
-        file = message.document or message.video or message.audio
-        file_info = await client.get_file(file.file_id)
+        # Mesajda dosya var mı kontrol et
+        file_attr = message.document or message.video or message.audio
+        if not file_attr:
+            await message.reply_text("⚠️ Lütfen bir dosya gönderin.", quote=True)
+            return
 
-        file_link = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}"
+        # file_id ve file_name al
+        file_id = file_attr.file_id
+        file_name = file_attr.file_name or "video.mkv"
 
+        # Stremio tarzı link üret
+        stream_link = f"{BASE_URL}/dl/{file_id}/{file_name}"
+
+        # Owner'a gönder
         await message.reply_text(
-            f"✅ Dosya alındı!\n\n📂 Dosya Adı: {file.file_name}\n🔗 Link: {file_link}",
+            f"📤 İşte dosyanın linki:\n<code>{stream_link}</code>",
             parse_mode=enums.ParseMode.HTML,
             quote=True
         )
-
-        print(f"[INFO] Owner dosya gönderdi: {file.file_name}")
-        print(f"[INFO] Dosya linki: {file_link}")
-
     except Exception as e:
-        await message.reply_text(f"⚠️ Hata: {e}")
-        print(f"[ERROR] Dosya link hatası: {e}")
+        await message.reply_text(f"⚠️ Hata: {e}", quote=True)
+        print("Hata /yayin:", e)
 
-# ---------------- Bot Başlat -----------------
+# ----------------- Bot Başlat -----------------
 if __name__ == "__main__":
-    print("Bot başlatılıyor...")
-    bot.run()
+    app_bot.run()
