@@ -50,7 +50,6 @@ async def send_m3u(client, message: Message):
             for movie in db["movie"].find({}):
                 title = movie.get("title", "Unknown Movie")
                 logo = movie.get("poster", "")
-                group = "Filmler"
                 telegram_files = movie.get("telegram", [])
                 for tg in telegram_files:
                     quality = tg.get("quality", "Unknown")
@@ -59,20 +58,18 @@ async def send_m3u(client, message: Message):
                         continue
                     url = f"{BASE_URL}/dl/{file_id}/video.mkv"
                     name = f"{title} [{quality}]"
-                    m3u.write(f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" group-title="{group}",{name}\n')
+                    m3u.write(f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" group-title="Filmler",{name}\n')
                     m3u.write(f"{url}\n")
 
             # --- Diziler ---
             for tv in db["tv"].find({}):
                 title = tv.get("title", "Unknown TV")
-                group = "Diziler"
                 seasons = tv.get("seasons", [])
                 for season in seasons:
                     season_number = season.get("season_number", 1)
                     episodes = season.get("episodes", [])
                     for ep in episodes:
                         ep_number = ep.get("episode_number", 1)
-                        ep_title = ep.get("title", f"{ep_number}")
                         logo = ep.get("episode_backdrop") or tv.get("poster", "")
                         telegram_files = ep.get("telegram", [])
                         for tg in telegram_files:
@@ -82,23 +79,14 @@ async def send_m3u(client, message: Message):
                                 continue
                             url = f"{BASE_URL}/dl/{file_id}/video.mkv"
                             name = f"{title} S{season_number:02d}E{ep_number:02d} [{quality}]"
-                            m3u.write(f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" group-title="{group}",{name}\n')
+                            m3u.write(f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" group-title="Diziler",{name}\n')
                             m3u.write(f"{url}\n")
 
-        # Dosyayı gönder
-        sent_msg = await client.send_document(
+        await client.send_document(
             chat_id=message.chat.id,
             document=tmp_file_path,
             caption="📂 M3U dosyanız hazır!"
         )
-
-        # Telegram üzerinden indirilebilir link oluştur
-        file_id = sent_msg.document.file_id
-        await client.send_message(
-            chat_id=message.chat.id,
-            text=f"🔗 Dosyayı indir: https://t.me/{client.username}?start={file_id}"
-        )
-
         await start_msg.delete()
 
     except Exception as e:
