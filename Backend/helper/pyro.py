@@ -148,6 +148,8 @@ commands = [
     BotCommand("cevir", "🇹🇷 Filmleri ve dizileri Türkçeye çevir."),
     BotCommand("restart", "♻️ Botu yeniden başlat."),
     BotCommand("set", "🎬 IMDb meta verilerini elle ekleyin."),
+    BotCommand("dbindir", "💾 Veritabanını indir."),
+    BotCommand("m3uindir", "📂 M3U dosyasını indir."),
     BotCommand("log", "📄 Günlük dosyasını gönder."),
     BotCommand("fixmetadata", "⚙️ Meta Veri'nin boş alanlarını düzeltin."),
     BotCommand("sil", "🗑️ Film ve dizi veritabanını silin.")
