@@ -8,7 +8,7 @@ import importlib.util
 import time
 
 # ------------ DATABASE'i config.py'den alma ------------
-CONFIG_PATH = "/home/debian/tstre1.4.4/config.py"
+CONFIG_PATH = "/home/debian/tstre1.4.4/config.env"
 
 def read_database_from_config():
     if not os.path.exists(CONFIG_PATH):
