@@ -7,7 +7,7 @@ from time import time
 import os
 import importlib.util
 
-CONFIG_PATH = "/home/debian/tstre1.4.4/config.env"
+CONFIG_PATH = "/home/debian/dfbot/config.env"
 DOWNLOAD_DIR = "/"
 bot_start_time = time()
 
