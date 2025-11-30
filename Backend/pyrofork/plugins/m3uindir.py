@@ -48,14 +48,13 @@ async def send_m3u_file(client, message: Message):
             # FILMLER
             # -----------------------------
             for movie in db["movie"].find({}):
-                title = movie.get("title", "Unknown Movie")
                 logo = movie.get("poster", "")
                 telegram_files = movie.get("telegram", [])
                 genres = movie.get("genres", [])
 
                 for tg in telegram_files:
-                    file_id = tg.get("id")  # DÜZELTİLDİ
-                    name = tg.get("name")   # DÜZELTİLDİ
+                    file_id = tg.get("id")
+                    name = tg.get("name")
                     if not file_id or not name:
                         continue
 
@@ -94,7 +93,7 @@ async def send_m3u_file(client, message: Message):
                     )
                     m3u.write(f"{url}\n")
 
-                    # --- Genre kategorileri satırları ---
+                    # --- Tür kategorileri satırları ---
                     if genres:
                         for genre in genres:
                             genre_group = f"{genre} Filmleri"
@@ -107,22 +106,19 @@ async def send_m3u_file(client, message: Message):
             # DİZİLER
             # -----------------------------
             for tv in db["tv"].find({}):
-                title = tv.get("title", "Unknown TV")
                 logo_tv = tv.get("poster", "")
                 seasons = tv.get("seasons", [])
 
                 for season in seasons:
-                    season_number = season.get("season_number", 1)
                     episodes = season.get("episodes", [])
 
                     for ep in episodes:
-                        ep_number = ep.get("episode_number", 1)
                         logo = ep.get("episode_backdrop") or logo_tv
                         telegram_files = ep.get("telegram", [])
 
                         for tg in telegram_files:
-                            file_id = tg.get("id")  # DÜZELTİLDİ
-                            name = tg.get("name")   # DÜZELTİLDİ
+                            file_id = tg.get("id")
+                            name = tg.get("name")
                             if not file_id or not name:
                                 continue
 
