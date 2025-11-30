@@ -44,26 +44,24 @@ async def send_m3u_file(client, message: Message):
         with open(file_path, "w", encoding="utf-8") as m3u:
             m3u.write("#EXTM3U\n")
 
-            # --------------------------------------------------------------------------------
-            #                                       FİLMLER
-            # --------------------------------------------------------------------------------
+            # -----------------------------
+            # FILMLER
+            # -----------------------------
             for movie in db["movie"].find({}):
                 title = movie.get("title", "Unknown Movie")
                 logo = movie.get("poster", "")
                 telegram_files = movie.get("telegram", [])
 
                 for tg in telegram_files:
-                    quality = tg.get("quality", "Unknown")
                     file_id = tg.get("id")
-                    file_name = tg.get("name", "")
-                    if not file_id:
+                    name = tg.get("name")  # Dosya adını olduğu gibi al
+                    if not file_id or not name:
                         continue
 
                     url = f"{BASE_URL}/dl/{file_id}/video.mkv"
-                    name = f"{title} [{quality}]"
 
-                    # --- Yıl tespit ---
-                    year_match = re.search(r"\b(19\d{2}|20\d{2})\b", file_name)
+                    # --- Yıl kategorisi ---
+                    year_match = re.search(r"\b(19\d{2}|20\d{2})\b", name)
                     if year_match:
                         year = int(year_match.group(1))
                         if year < 1950:
@@ -89,16 +87,14 @@ async def send_m3u_file(client, message: Message):
                     else:
                         group = "Filmler"
 
-                    # M3U yaz
                     m3u.write(
-                        f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" '
-                        f'group-title="{group}",{name}\n'
+                        f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" group-title="{group}",{name}\n'
                     )
                     m3u.write(f"{url}\n")
 
-            # --------------------------------------------------------------------------------
-            #                                       DİZİLER
-            # --------------------------------------------------------------------------------
+            # -----------------------------
+            # DİZİLER
+            # -----------------------------
             for tv in db["tv"].find({}):
                 title = tv.get("title", "Unknown TV")
                 logo_tv = tv.get("poster", "")
@@ -114,36 +110,32 @@ async def send_m3u_file(client, message: Message):
                         telegram_files = ep.get("telegram", [])
 
                         for tg in telegram_files:
-                            quality = tg.get("quality", "Unknown")
                             file_id = tg.get("id")
-                            file_name = tg.get("name", "").lower()
-
-                            if not file_id:
+                            name = tg.get("name")  # Dosya adını olduğu gibi al
+                            if not file_id or not name:
                                 continue
 
                             url = f"{BASE_URL}/dl/{file_id}/video.mkv"
-                            name = f"{title} S{season_number:02d}E{ep_number:02d} [{quality}]"
+                            file_name_lower = name.lower()
 
                             # --- Dizi platform kategorisi ---
-                            if "dsnp" in file_name:
+                            if "dsnp" in file_name_lower:
                                 group = "Disney Dizileri"
-                            elif "nf" in file_name:
+                            elif "nf" in file_name_lower:
                                 group = "Netflix Dizileri"
-                            elif "exxen" in file_name:
+                            elif "exxen" in file_name_lower:
                                 group = "Exxen Dizileri"
-                            elif "tabii" in file_name:
+                            elif "tabii" in file_name_lower:
                                 group = "Tabii Dizileri"
-                            elif "hbo" in file_name or "hbomax" in file_name or "blutv" in file_name:
+                            elif "hbo" in file_name_lower or "hbomax" in file_name_lower or "blutv" in file_name_lower:
                                 group = "Hbo Dizileri"
                             else:
                                 group = "Diziler"
 
                             m3u.write(
-                                f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" '
-                                f'group-title="{group}",{name}\n'
+                                f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" group-title="{group}",{name}\n'
                             )
                             m3u.write(f"{url}\n")
-
 
         await client.send_document(
             chat_id=message.chat.id,
