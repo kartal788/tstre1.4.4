@@ -12,7 +12,7 @@ from Backend.helper.encrypt import encode_string
 
 # ----------------- Configuration -----------------
 DELAY = 0
-tmdb = aioTMDb(key=Telegram.TMDB_API, language="en-US", region="US")
+tmdb = aioTMDb(key=Telegram.TMDB_API, language="tr-TR", region="TR")
 
 # Cache dictionaries (per run)
 IMDB_CACHE: dict = {}
