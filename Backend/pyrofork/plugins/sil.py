@@ -1,14 +1,13 @@
 from pyrogram import Client, filters, enums
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from Backend.helper.custom_filter import CustomFilters
 from pymongo import MongoClient, DeleteOne
 import os
 import importlib.util
 import time
-import psutil
 import asyncio
 
-# ------------ DATABASE BAĞLANTISI ------------
+# ------------ DATABASE Bağlantısı ------------
 CONFIG_PATH = "/home/debian/tstre1.4.4/config.env"
 
 def read_database_from_config():
@@ -62,7 +61,7 @@ async def delete_collection_progress(collection, name, message):
     done = 0
     start_time = time.time()
     last_update = 0
-    BATCH_SIZE = 50  # batch boyutu
+    BATCH_SIZE = 50
 
     while done < total:
         batch = data[done:done+BATCH_SIZE]
@@ -76,7 +75,7 @@ async def delete_collection_progress(collection, name, message):
         remaining = total - done
         eta = remaining / rate if rate > 0 else 0
 
-        if current_time - last_update > 5 or done == total:  # her 5 sn güncelle
+        if current_time - last_update > 5 or done == total:
             bar = progress_bar(done, total)
             text = f"{name} siliniyor: {done}/{total}\n{bar}\nKalan: {remaining}\n⏳ ETA: {format_time(eta)}"
             try: await message.edit_text(text)
@@ -85,9 +84,9 @@ async def delete_collection_progress(collection, name, message):
 
     return total
 
-# ------------ /sil Komutu (Butonlu) ------------
+# ------------ /sil Komutu ------------
 @Client.on_message(filters.command("sil") & filters.private & CustomFilters.owner)
-async def delete_all_data(client: Client, message: Message):
+async def delete_all_data(client: Client, message):
     keyboard = InlineKeyboardMarkup(
         [
             [
@@ -97,7 +96,7 @@ async def delete_all_data(client: Client, message: Message):
         ]
     )
     await message.reply_text(
-        "⚠️ Dikkat! Bu işlem geri alınamaz.\nTüm film ve dizi verileri silinecek.\nOnaylıyor musunuz?",
+        "Tüm film ve dizi verileri silinecek.\nOnaylıyor musunuz?",
         reply_markup=keyboard
     )
 
