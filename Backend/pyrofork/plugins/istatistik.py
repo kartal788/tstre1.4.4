@@ -83,7 +83,7 @@ async def send_statistics(client: Client, message: Message):
             f"┠ <b>Diziler:</b> {series}\n"
             f"┖ <b>Depolama:</b> {storage_mb} MB\n\n"
             f"┟ <b>CPU</b> → {cpu}% | <b>Boş</b> → {free_disk}GB [{free_percent}%]\n"
-            f"┖ <b>RAM</b> → {ram}% | <b>UP</b> → {uptime}"
+            f"┖ <b>RAM</b> → {ram}% | <b>Çalışma Süresi</b> → {uptime}"
         )
 
         await message.reply_text(text, parse_mode=enums.ParseMode.HTML, quote=True)
