@@ -6,7 +6,6 @@ import os
 import importlib.util
 import tempfile
 
-# ------------ CONFIG/ENV'DEN ALMA ------------
 CONFIG_PATH = "/home/debian/dfbot/config.env"
 
 def read_config():
@@ -28,12 +27,10 @@ BASE_URL = getattr(config, "BASE_URL", "") or os.getenv("BASE_URL", "")
 if not BASE_URL:
     raise Exception("BASE_URL config veya env'de bulunamadı!")
 
-# ------------ MONGO BAĞLANTISI ------------
 client_db = MongoClient(MONGO_URL)
 db_name = client_db.list_database_names()[0]
 db = client_db[db_name]
 
-# ------------ /m3uplus KOMUTU ------------
 @Client.on_message(filters.command("m3uplus") & filters.private & CustomFilters.owner)
 async def send_m3u(client, message: Message):
     start_msg = await message.reply_text("📝 M3U dosyası hazırlanıyor, lütfen bekleyin...")
@@ -46,24 +43,32 @@ async def send_m3u(client, message: Message):
         with open(tmp_file_path, "w", encoding="utf-8") as m3u:
             m3u.write("#EXTM3U\n")
 
-            # --- Filmler ---
-            for movie in db["movie"].find({}):
-                title = movie.get("title", "Unknown Movie")
-                logo = movie.get("poster", "")
-                telegram_files = movie.get("telegram", [])
-                for tg in telegram_files:
-                    quality = tg.get("quality", "Unknown")
-                    file_id = tg.get("id")
-                    if not file_id:
-                        continue
-                    url = f"{BASE_URL}/dl/{file_id}/video.mkv"
-                    name = f"{title} [{quality}]"
-                    m3u.write(f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" group-title="Filmler",{name}\n')
-                    m3u.write(f"{url}\n")
+            # --- Movie Koleksiyonu: Kategoriye göre grupla ---
+            movies = list(db["movie"].find({}))
+            categories = {}
+            for movie in movies:
+                cat = movie.get("category", "Diğer")  # kategori yoksa "Diğer"
+                categories.setdefault(cat, []).append(movie)
 
-            # --- Diziler ---
+            for cat_name, cat_movies in categories.items():
+                for movie in cat_movies:
+                    title = movie.get("title", "Unknown Movie")
+                    logo = movie.get("poster", "")
+                    telegram_files = movie.get("telegram", [])
+                    for tg in telegram_files:
+                        quality = tg.get("quality", "Unknown")
+                        file_id = tg.get("id")
+                        if not file_id:
+                            continue
+                        url = f"{BASE_URL}/dl/{file_id}/video.mkv"
+                        name = f"{title} [{quality}]"
+                        m3u.write(f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" group-title="{cat_name}",{name}\n')
+                        m3u.write(f"{url}\n")
+
+            # --- TV Koleksiyonu: Tek kategori "Diziler" ---
             for tv in db["tv"].find({}):
                 title = tv.get("title", "Unknown TV")
+                group = "Diziler"
                 seasons = tv.get("seasons", [])
                 for season in seasons:
                     season_number = season.get("season_number", 1)
@@ -79,7 +84,7 @@ async def send_m3u(client, message: Message):
                                 continue
                             url = f"{BASE_URL}/dl/{file_id}/video.mkv"
                             name = f"{title} S{season_number:02d}E{ep_number:02d} [{quality}]"
-                            m3u.write(f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" group-title="Diziler",{name}\n')
+                            m3u.write(f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" group-title="{group}",{name}\n')
                             m3u.write(f"{url}\n")
 
         await client.send_document(
