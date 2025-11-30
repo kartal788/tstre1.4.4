@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 import psutil
 
 # ------------ AYARLAR ------------
-CONFIG_PATH = "/home/debian/tstre1.4.4/config.env"
+CONFIG_PATH = "/home/debian/dfbot/config.env"
 PROGRESS_UPDATE_INTERVAL = 30  # saniye
 
 # ------------ OTOMATİK DONANIM ÖLÇÜMÜ ------------
