@@ -1,138 +1,170 @@
-# auto_stremio_bot_config_fallback.py
 import os
-import secrets
 import importlib.util
-from urllib.parse import quote
-from threading import Thread
-
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import StreamingResponse
-from pyrogram import Client, filters
 import asyncio
+from pyrogram import Client, filters
+from pyrogram.types import Message
+from fastapi import FastAPI, Response
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import StreamingResponse
+import uvicorn
 
-# -------------------- CONFIG --------------------
+# ==========================
+# CONFIG OKUMA
+# ==========================
 CONFIG_PATH = "/home/debian/dfbot/config.env"
 
 def load_config():
-    """Config dosyasını oku, yoksa env'den al"""
+    config = {}
     if os.path.exists(CONFIG_PATH):
         spec = importlib.util.spec_from_file_location("config", CONFIG_PATH)
-        config = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(config)
-        return config
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        for key in dir(module):
+            if key.isupper():
+                config[key] = getattr(module, key)
+
+    # ENV fallback
+    for key in ["API_ID", "API_HASH", "BOT_TOKEN", "OWNER_ID", "BASE_URL"]:
+        config[key] = config.get(key) or os.getenv(key)
+
+    return config
+
+
+CFG = load_config()
+OWNER_ID = int(CFG["OWNER_ID"])
+BASE_URL = CFG["BASE_URL"]
+
+
+# ==========================
+# DURUM: Yayın Modu Açık mı?
+# ==========================
+yayin_modu = False
+
+# ==========================
+# PYROGRAM BOT
+# ==========================
+bot = Client(
+    "uplink",
+    api_id=int(CFG["API_ID"]),
+    api_hash=CFG["API_HASH"],
+    bot_token=CFG["BOT_TOKEN"],
+    in_memory=True
+)
+
+# RAM Storage
+ram_storage = {}
+
+
+# ==========================
+# /yayin KOMUTU
+# ==========================
+@bot.on_message(filters.command("yayin") & filters.private)
+async def yayin_toggle(_: Client, msg: Message):
+    global yayin_modu
+
+    if msg.from_user.id != OWNER_ID:
+        return await msg.reply("⛔ Bu özellik sadece owner için.")
+
+    yayin_modu = not yayin_modu
+
+    if yayin_modu:
+        return await msg.reply("📡 <b>Yayın modu açıldı!</b>\nDosya gönder → link otomatik gelecek.", quote=True)
     else:
-        # Geçici env fallback
-        class EnvConfig:
-            BOT_TOKEN = os.environ.get("BOT_TOKEN")
-            API_ID = int(os.environ.get("API_ID", "0"))
-            API_HASH = os.environ.get("API_HASH")
-            BASE_URL = os.environ.get("BASE_URL")
-            OWNER_ID = int(os.environ.get("OWNER_ID", "0"))
-            PORT = int(os.environ.get("PORT", "8000"))
-        return EnvConfig
+        return await msg.reply("🛑 <b>Yayın modu kapatıldı.</b>\nArtık dosya gönderince link üretilmeyecek.", quote=True)
 
-config = load_config()
 
-BOT_TOKEN = getattr(config, "BOT_TOKEN", None)
-API_ID = getattr(config, "API_ID", None)
-API_HASH = getattr(config, "API_HASH", None)
-BASE_URL = getattr(config, "BASE_URL", None)
-OWNER_ID = getattr(config, "OWNER_ID", None)
-PORT = getattr(config, "PORT", 8000)
-
-if not BOT_TOKEN or not API_ID or not API_HASH or not BASE_URL or not OWNER_ID:
-    raise Exception("BOT_TOKEN, API_ID, API_HASH, BASE_URL ve OWNER_ID tanımlanmalı!")
-
-# -------------------- TELEGRAM BOT --------------------
-bot = Client("stremio_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
-
-# Owner kontrolü
-def is_owner(user_id: int):
-    return user_id == OWNER_ID
-
-# Otomatik dosya yakalama
-@bot.on_message(filters.private & (filters.document | filters.video))
-async def auto_file_handler(client: Client, message):
-    if not is_owner(message.from_user.id):
+# ==========================
+# DOSYA GELİNCE → Link Üret
+# ==========================
+@bot.on_message(filters.private & (filters.document | filters.video | filters.audio))
+async def file_handler(client: Client, msg: Message):
+    if msg.from_user.id != OWNER_ID:
         return
 
-    file = message.document or message.video
+    global yayin_modu
+
+    # Yayın modu kapalıysa işlem yapma
+    if not yayin_modu:
+        return
+
+    file = msg.document or msg.video or msg.audio
     file_id = file.file_id
-    file_name = file.file_name or f"{secrets.token_hex(4)}.mkv"
+    file_name = file.file_name
 
-    stremio_url = f"{BASE_URL}/dl/{quote(file_id)}/{quote(file_name)}"
-    await message.reply_text(f"✅ Stremio uyumlu link hazır:\n{stremio_url}")
+    ram_storage[file_id] = {
+        "msg": msg,
+        "size": file.file_size,
+        "name": file_name
+    }
 
-# -------------------- FASTAPI --------------------
-app = FastAPI(title="Telegram Stremio Streaming")
+    stream_url = f"{BASE_URL}/dl/{file_id}"
 
-@app.get("/dl/{file_id}/{file_name}")
-async def stream_file(file_id: str, file_name: str, request: Request):
-    try:
-        # Telegram üzerinden file_id ile dosya bilgisi al
-        message = await bot.get_messages(chat_id="@me", message_ids=file_id)
-        file = message.document or message.video
-        file_size = file.file_size
+    return await msg.reply(
+        f"✔ Yayın Linki Hazır!\n\n"
+        f"📄 <b>{file_name}</b>\n"
+        f"🔗 `{stream_url}`\n"
+        f"⏳ RAM üzerinden stream yapılacak.",
+        quote=True
+    )
 
-        # Range header
-        range_header = request.headers.get("Range", "")
-        from_bytes, until_bytes = 0, file_size - 1
-        if range_header.startswith("bytes="):
-            try:
-                from_str, until_str = range_header[6:].split("-")
-                from_bytes = int(from_str) if from_str else 0
-                until_bytes = int(until_str) if until_str else file_size - 1
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid Range header")
 
-        req_length = until_bytes - from_bytes + 1
+# ==========================
+# FASTAPI
+# ==========================
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-        # Telegram'dan byte aralığını async olarak al
-        async def file_generator():
-            offset = from_bytes
-            chunk_size = 1024 * 1024
-            while offset <= until_bytes:
-                chunk = await bot.download_media(
-                    file, file_name=None,
-                    file_offset=offset,
-                    file_size=min(chunk_size, until_bytes - offset + 1)
-                )
-                yield chunk
-                offset += len(chunk)
 
-        headers = {
-            "Content-Type": file.mime_type or "application/octet-stream",
-            "Content-Length": str(req_length),
-            "Content-Disposition": f'inline; filename="{file_name}"',
-            "Accept-Ranges": "bytes",
-            "Cache-Control": "public, max-age=3600, immutable",
-        }
-        if range_header:
-            headers["Content-Range"] = f"bytes {from_bytes}-{until_bytes}/{file_size}"
-            status_code = 206
-        else:
-            status_code = 200
+@app.get("/dl/{file_id}")
+async def stream_file(file_id: str):
+    if file_id not in ram_storage:
+        return Response("Not Found", status_code=404)
 
-        return StreamingResponse(
-            content=file_generator(),
-            status_code=status_code,
-            headers=headers,
-            media_type=file.mime_type or "application/octet-stream"
-        )
+    msg = ram_storage[file_id]["msg"]
+    size = ram_storage[file_id]["size"]
+    filename = ram_storage[file_id]["name"]
 
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    async def iterfile():
+        chunk_size = 1024 * 512  # 512 KB
+        offset = 0
 
-# -------------------- BOT START --------------------
-def start_bot():
-    asyncio.run(bot.start())
-    bot.idle()
+        while offset < size:
+            chunk = await bot.download_media(
+                msg,
+                file_name=None,
+                file_offset=offset,
+                file_size=min(chunk_size, size - offset)
+            )
+            if not chunk:
+                break
 
-if __name__ == "__main__":
-    import uvicorn
+            yield chunk
+            offset += len(chunk)
 
-    # Pyrogram bot'u ayrı thread'de çalıştır
-    Thread(target=start_bot).start()
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"'
+    }
 
-    # FastAPI server başlat
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    return StreamingResponse(iterfile(), headers=headers)
+
+
+# ==========================
+# BOT + API BAŞLAT
+# ==========================
+async def main():
+    await bot.start()
+    print("Bot çalışıyor...")
+
+    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
+    server = uvicorn.Server(config)
+
+    await server.serve()
+
+
+asyncio.run(main())
