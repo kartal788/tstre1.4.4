@@ -108,14 +108,15 @@ def update_traffic_stats():
     month_total = month_up + month_down
     total_traffic = total_up + total_down
 
-    # Son 7 günün tarih ve toplam kullanımı
+    # Son 7 günün tarih ve toplam kullanımı (0MB olanları atla)
     last_7_days = []
-    for i in range(15):
+    for i in range(7):
         day = (datetime.utcnow() - timedelta(days=i)).strftime("%Y-%m-%d")
         u = data.get("daily", {}).get(day, {}).get("upload", 0)
         d = data.get("daily", {}).get(day, {}).get("download", 0)
         total = u + d
-        last_7_days.append((day, format_size(total)))
+        if total > 0:  # 0MB olan günleri atla
+            last_7_days.append((day, format_size(total)))
 
     return (
         format_size(daily_up),
@@ -144,7 +145,11 @@ async def send_statistics(client: Client, message: Message):
         cpu, ram, free_disk, free_percent, uptime = get_system_status()
         daily_up, daily_down, month_up, month_down, total_up, total_down, daily_total, month_total, total_traffic, last_7_days = update_traffic_stats()
 
-        last_7_text = "\n".join([f"{day}: {total}" for day, total in last_7_days])
+        # Son 7 gün için mesaj
+        if last_7_days:
+            last_7_text = "\n".join([f"{day}: {total}" for day, total in last_7_days])
+        else:
+            last_7_text = "Veri yok"
 
         text = (
             f"⌬ <b>İstatistik</b>\n"
