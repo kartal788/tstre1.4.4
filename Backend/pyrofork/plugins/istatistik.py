@@ -108,9 +108,9 @@ def update_traffic_stats():
     month_total = month_up + month_down
     total_traffic = total_up + total_down
 
-    # Son 7 günün tarih ve toplam kullanımı (0MB olanları atla)
+    # Son 15 günün tarih ve toplam kullanımı (0MB olanları atla)
     last_7_days = []
-    for i in range(7):
+    for i in range(15):
         day = (datetime.utcnow() - timedelta(days=i)).strftime("%Y-%m-%d")
         u = data.get("daily", {}).get(day, {}).get("upload", 0)
         d = data.get("daily", {}).get(day, {}).get("download", 0)
