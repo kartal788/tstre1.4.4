@@ -160,7 +160,7 @@ async def send_statistics(client: Client, message: Message):
             f"┠  <b>Bugün:</b> {daily_total}\n"
             f"┠ <b>Aylık:</b> {month_total}\n"
             f"┖ <b>Toplam:</b> {total_traffic}\n\n"
-            f"┟ <b>CPU</b> → {cpu}% | <b>Boş Disk</b> → {free_disk}GB [{free_percent}%]\n"
+            f"┟ <b>CPU</b> → {cpu}% | <b>Boş</b> → {free_disk}GB [{free_percent}%]\n"
             f"┖ <b>RAM</b> → {ram}% | <b>Süre</b> → {uptime}\n\n"
             f"⌬ <b>Son 15 Gün:</b>\n{last_7_text}"
         )
