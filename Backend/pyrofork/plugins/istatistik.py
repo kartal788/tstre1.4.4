@@ -5,16 +5,13 @@ from pymongo import MongoClient
 from psutil import virtual_memory, cpu_percent, disk_usage, net_io_counters
 from time import time
 from datetime import datetime
-import os
-import importlib.util
-import json
+import os, importlib.util, json
 
 CONFIG_PATH = "/home/debian/dfbot/config.env"
 DOWNLOAD_DIR = "/"
 bot_start_time = time()
-
 DAILY_FILE = "daily_traffic.json"
-PAGE_SIZE = 30  # Her sayfa 30 günlük trafik
+PAGE_SIZE = 30  # 30 günlük sayfa
 
 # ---------------- JSON Yardımcı ----------------
 def load_json(path):
@@ -42,43 +39,60 @@ def update_daily_traffic():
     save_json(DAILY_FILE, daily)
 
 # ---------------- Sayfa Metni ----------------
-def get_page_text(page_index=0):
+def get_page_text(page_index=0, movies=0, series=0, storage_mb=0):
     daily = load_json(DAILY_FILE)
     dates = sorted(daily.keys(), reverse=True)
-    start = page_index * PAGE_SIZE
-    end = start + PAGE_SIZE
-    page_dates = dates[start:end]
+    total_pages = max(1, (len(dates)-1)//PAGE_SIZE + 1)
 
-    lines = []
-    total_up = 0
-    total_down = 0
+    if page_index == 0:
+        # İlk sayfa: Film/Dizi/Depolama + CPU/RAM/Disk + Süre
+        cpu, ram, free_disk, free_percent, uptime = get_system_status()
+        text = (
+            "⌬ <b>İstatistik</b>\n│\n"
+            f"┠ Filmler: {movies}\n"
+            f"┠ Diziler: {series}\n"
+            f"┖ Depolama: {storage_mb} MB\n\n"
+            f"┟ CPU → {cpu}% | Boş → {free_disk}GB [{free_percent}%]\n"
+            f"┖ RAM → {ram}% | Süre → {uptime}"
+        )
+        return text
+    else:
+        # Sonraki sayfalar: Trafik detayları
+        start = (page_index-1) * PAGE_SIZE
+        end = start + PAGE_SIZE
+        page_dates = dates[start:end]
 
-    for d in page_dates:
-        up = daily[d]["upload"]
-        down = daily[d]["download"]
-        total_up += up
-        total_down += down
-        lines.append(f"┠{d} İndirilen {format_bytes(down)} Yüklenen {format_bytes(up)} Toplam: {format_bytes(up+down)}")
+        lines = []
+        total_up = 0
+        total_down = 0
 
-    total_line = (
-        f"\n┠Toplam İndirilen: {format_bytes(total_down)}\n"
-        f"┠Toplam Yüklenen: {format_bytes(total_up)}\n"
-        f"┖Toplam Kullanım: {format_bytes(total_up + total_down)}"
-    )
+        for d in page_dates:
+            up = daily[d]["upload"]
+            down = daily[d]["download"]
+            total_up += up
+            total_down += down
+            lines.append(f"┠{d} İndirilen {format_bytes(down)} Yüklenen {format_bytes(up)} Toplam: {format_bytes(up+down)}")
 
-    return "⌬ <b>İstatistik</b>\n\n" + "\n".join(lines) + total_line
+        total_line = (
+            f"\n┠Toplam İndirilen: {format_bytes(total_down)}\n"
+            f"┠Toplam Yüklenen: {format_bytes(total_up)}\n"
+            f"┖Toplam Kullanım: {format_bytes(total_up + total_down)}"
+        )
+
+        text = "30 Günlük Trafik:\n" + "\n".join(lines) + total_line
+        return text
 
 # ---------------- Klavye ----------------
 def get_keyboard(page_index, max_page):
     row = []
     if page_index > 0:
-        row.append(InlineKeyboardButton("◀️ Geri", callback_data=f"prev:{page_index-1}"))
+        row.append(InlineKeyboardButton("◀️ Geri", callback_data=f"prev:{page_index}"))
     if page_index < max_page:
-        row.append(InlineKeyboardButton("İleri ▶️", callback_data=f"next:{page_index+1}"))
+        row.append(InlineKeyboardButton("İleri ▶️", callback_data=f"next:{page_index}"))
     row.append(InlineKeyboardButton("❌ İptal", callback_data="cancel"))
     return InlineKeyboardMarkup([row])
 
-# ---------------- Config Database Okuma ----------------
+# ---------------- Config Database ----------------
 def read_database_from_config():
     if not os.path.exists(CONFIG_PATH):
         return None
@@ -113,7 +127,7 @@ def get_system_status():
     uptime_sec = int(time() - bot_start_time)
     h,r = divmod(uptime_sec,3600)
     m,s = divmod(r,60)
-    uptime = f"{h} saat {m} dakika {s} saniye"
+    uptime = f"{h}s{m}d{s}s"
     return cpu, ram, free_disk, free_percent, uptime
 
 # ---------------- /istatistik ----------------
@@ -122,18 +136,14 @@ async def send_statistics(client: Client, message: Message):
     try:
         update_daily_traffic()
         daily = load_json(DAILY_FILE)
-        total_pages = max(0, (len(daily)-1)//PAGE_SIZE)
+        total_pages = max(1, len(daily)//PAGE_SIZE + 1)
 
         db_urls = get_db_urls()
         movies = series = storage_mb = 0
         if len(db_urls)>=2:
             movies, series, storage_mb = get_db_stats(db_urls[1])
 
-        cpu, ram, free_disk, free_percent, uptime = get_system_status()
-
-        text = get_page_text(0)
-        text += f"\n\n┟ <b>CPU</b> → {cpu}% | Boş → {free_disk}GB [{free_percent}%]\n┖ RAM → {ram}% | Süre → {uptime}"
-
+        text = get_page_text(0, movies, series, storage_mb)
         keyboard = get_keyboard(0, total_pages)
         await message.reply_text(text, parse_mode=enums.ParseMode.HTML, reply_markup=keyboard)
 
@@ -145,26 +155,31 @@ async def send_statistics(client: Client, message: Message):
 @Client.on_callback_query()
 async def cb(c: Client, q: CallbackQuery):
     daily = load_json(DAILY_FILE)
-    total_pages = max(0, (len(daily)-1)//PAGE_SIZE)
+    total_pages = max(1, len(daily)//PAGE_SIZE + 1)
 
     if q.data.startswith("prev:"):
         page = int(q.data.split(":")[1])
-        text = get_page_text(page)
-        cpu, ram, free_disk, free_percent, uptime = get_system_status()
-        text += f"\n\n┟ <b>CPU</b> → {cpu}% | Boş → {free_disk}GB [{free_percent}%]\n┖ RAM → {ram}% | Süre → {uptime}"
-        keyboard = get_keyboard(page, total_pages)
-        await q.message.edit_text(text, parse_mode=enums.ParseMode.HTML, reply_markup=keyboard)
-        await q.answer()
-
     elif q.data.startswith("next:"):
         page = int(q.data.split(":")[1])
-        text = get_page_text(page)
-        cpu, ram, free_disk, free_percent, uptime = get_system_status()
-        text += f"\n\n┟ <b>CPU</b> → {cpu}% | Boş → {free_disk}GB [{free_percent}%]\n┖ RAM → {ram}% | Süre → {uptime}"
-        keyboard = get_keyboard(page, total_pages)
-        await q.message.edit_text(text, parse_mode=enums.ParseMode.HTML, reply_markup=keyboard)
-        await q.answer()
-
     elif q.data == "cancel":
         await q.message.delete()
         await q.answer("İstatistik kapatıldı.")
+        return
+    else:
+        await q.answer()
+        return
+
+    db_urls = get_db_urls()
+    movies = series = storage_mb = 0
+    if len(db_urls)>=2:
+        movies, series, storage_mb = get_db_stats(db_urls[1])
+
+    text = get_page_text(page, movies, series, storage_mb)
+    if page == 0:
+        # Sayfa 0 zaten Film/Dizi/Depolama + CPU/RAM/Disk
+        cpu, ram, free_disk, free_percent, uptime = get_system_status()
+        text += f"\n\n┟ CPU → {cpu}% | Boş → {free_disk}GB [{free_percent}%]\n┖ RAM → {ram}% | Süre → {uptime}"
+
+    keyboard = get_keyboard(page, total_pages)
+    await q.message.edit_text(text, parse_mode=enums.ParseMode.HTML, reply_markup=keyboard)
+    await q.answer()
