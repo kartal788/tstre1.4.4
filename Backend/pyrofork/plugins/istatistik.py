@@ -153,16 +153,16 @@ async def send_statistics(client: Client, message: Message):
 
         text = (
             f"⌬ <b>İstatistik</b>\n"
-            f"│\n"
+            f" \n"
             f"┠ <b>Filmler:</b> {movies}\n"
             f"┠ <b>Diziler:</b> {series}\n"
             f"┖ <b>Depolama:</b> {storage_mb} MB\n\n"
-            f"┖ <b>Bugün:</b> {daily_total}\n"
-            f"┖ <b>Aylık:</b> {month_total}\n"
+            f"┠  <b>Bugün:</b> {daily_total}\n"
+            f"┠ <b>Aylık:</b> {month_total}\n"
             f"┖ <b>Toplam:</b> {total_traffic}\n\n"
             f"┟ <b>CPU</b> → {cpu}% | <b>Boş Disk</b> → {free_disk}GB [{free_percent}%]\n"
             f"┖ <b>RAM</b> → {ram}% | <b>Süre</b> → {uptime}\n\n"
-            f"⌬ <b>Son 7 Gün:</b>\n{last_7_text}"
+            f"⌬ <b>Son 15 Gün:</b>\n{last_7_text}"
         )
         await message.reply_text(text, parse_mode=enums.ParseMode.HTML, quote=True)
 
