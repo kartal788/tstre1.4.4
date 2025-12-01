@@ -7,6 +7,7 @@ from time import time
 from datetime import datetime
 import os
 import json
+import importlib.util
 
 CONFIG_PATH = "/home/debian/dfbot/config.env"
 DOWNLOAD_DIR = "/"
@@ -14,8 +15,6 @@ bot_start_time = time()
 TRAFFIC_FILE = "/tmp/traffic_stats.json"  # Docker geçici dosyası
 
 # ---------------- MongoDB Config ----------------
-import importlib.util
-
 def read_database_from_config():
     if not os.path.exists(CONFIG_PATH):
         return None
@@ -96,12 +95,31 @@ def update_traffic_stats():
 
     save_traffic(data)
 
-    daily_up = format_size(data["daily"][today]["upload"])
-    daily_down = format_size(data["daily"][today]["download"])
-    month_up = format_size(data["monthly"][month]["upload"])
-    month_down = format_size(data["monthly"][month]["download"])
+    # Günlük / Aylık ayrı ayrı
+    daily_up = data["daily"][today]["upload"]
+    daily_down = data["daily"][today]["download"]
+    month_up = data["monthly"][month]["upload"]
+    month_down = data["monthly"][month]["download"]
 
-    return daily_up, daily_down, month_up, month_down, format_size(sent), format_size(recv)
+    # Toplamlar
+    total_up = sent
+    total_down = recv
+    daily_total = daily_up + daily_down
+    month_total = month_up + month_down
+    total_traffic = total_up + total_down
+
+    # Formatlı değerler
+    return (
+        format_size(daily_up),
+        format_size(daily_down),
+        format_size(month_up),
+        format_size(month_down),
+        format_size(total_up),
+        format_size(total_down),
+        format_size(daily_total),
+        format_size(month_total),
+        format_size(total_traffic)
+    )
 
 # ---------------- /istatistik Komutu ----------------
 @Client.on_message(filters.command("istatistik") & filters.private & CustomFilters.owner)
@@ -115,7 +133,7 @@ async def send_statistics(client: Client, message: Message):
             movies, series, storage_mb = get_db_stats(db_urls[0])
 
         cpu, ram, free_disk, free_percent, uptime = get_system_status()
-        daily_up, daily_down, month_up, month_down, realtime_up, realtime_down = update_traffic_stats()
+        daily_up, daily_down, month_up, month_down, total_up, total_down, daily_total, month_total, total_traffic = update_traffic_stats()
 
         text = (
             f"⌬ <b>İstatistik</b>\n"
@@ -123,12 +141,9 @@ async def send_statistics(client: Client, message: Message):
             f"┠ <b>Filmler:</b> {movies}\n"
             f"┠ <b>Diziler:</b> {series}\n"
             f"┖ <b>Depolama:</b> {storage_mb} MB\n\n"
-            f"┟ <b>İndirilen:</b> {realtime_up}\n"
-            f"┠ <b>Yüklenen:</b> {realtime_down}\n"
-            f"┠ <b>Bugün İndirilen:</b> {daily_down}\n"
-            f"┠ <b>Bugün Yüklenen:</b> {daily_up}\n"
-            f"┠ <b>Aylık İndirilen:</b> {month_down}\n"
-            f"┖ <b>Aylık Yüklenen:</b> {month_up}\n\n"
+            f"┖ <b>Bugün:</b> {daily_total}\n\n"
+            f"┖ <b>Aylık:</b> {month_total}\n\n"
+            f"┖ <b>Toplam:</b> {total_traffic}\n\n"
             f"┟ <b>CPU</b> → {cpu}% | <b>Boş Disk</b> → {free_disk}GB [{free_percent}%]\n"
             f"┖ <b>RAM</b> → {ram}% | <b>Süre</b> → {uptime}"
         )
