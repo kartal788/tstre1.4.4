@@ -110,7 +110,7 @@ def update_traffic_stats():
 
     # Son 7 günün tarih ve toplam kullanımı
     last_7_days = []
-    for i in range(7):
+    for i in range(15):
         day = (datetime.utcnow() - timedelta(days=i)).strftime("%Y-%m-%d")
         u = data.get("daily", {}).get(day, {}).get("upload", 0)
         d = data.get("daily", {}).get(day, {}).get("download", 0)
