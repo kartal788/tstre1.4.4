@@ -84,9 +84,9 @@ async def send_statistics(client, message):
             f"┠ Filmler: {movies}\n"
             f"┠ Diziler: {series}\n"
             f"┖ Depolama: {storage_mb} MB\n\n"
-            f"┠ Bu Ay Upload: {upload_mb}MB\n"
-            f"┠ Bu Ay Download: {download_mb}MB\n"
-            f"┖ Bu Ay Toplam: {total_mb}MB\n\n"
+            f"┠ İndirilen: {download_mb}MB\n"
+            f"┠ Yüklenen: {upload_mb}MB\n"
+            f"┖ Toplam: {total_mb}MB\n\n"
             f"┟ CPU → {cpu}% | Boş → {free_disk}GB [{free_percent}%]\n"
             f"┖ RAM → {ram}% | Süre → {uptime}"
         )
