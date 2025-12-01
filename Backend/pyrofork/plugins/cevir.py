@@ -245,7 +245,7 @@ async def turkce_icerik(client: Client, message: Message):
 
     hours, rem = divmod(total_time, 3600)
     minutes, seconds = divmod(rem, 60)
-    eta_str = f"{int(hours)}h{int(minutes)}m{int(seconds)}s"
+    eta_str = f"{int(hours)}s{int(minutes)}d{int(seconds)}s"
 
     summary = (
         "🎉 *Film & Dizi Türkçeleştirme Sonuçları*\n\n"
