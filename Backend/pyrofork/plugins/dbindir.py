@@ -7,7 +7,7 @@ import importlib.util
 import json
 import datetime
 import tempfile
-import time
+import os
 
 # ------------ DATABASE Bağlantısı ------------
 CONFIG_PATH = "/home/debian/dfbot/config.env"
@@ -35,73 +35,30 @@ client_db = MongoClient(MONGO_URL)
 db_name = client_db.list_database_names()[0]
 db = client_db[db_name]
 
-# ------------ /vtindir Komutu (Tek JSON Dosya, Tahmini Süre, İptal) ------------
-cancel_process = False  # İşlemi iptal etmek için bu değeri True yapabilirsiniz
-
-@Client.on_message(filters.command("vtindir") & filters.private & CustomFilters.owner)
+# ------------ /dbindir Komutu (Tek JSON Dosya) ------------
+@Client.on_message(filters.command("dbindir") & filters.private & CustomFilters.owner)
 async def download_database(client, message: Message):
-    global cancel_process
-    cancel_process = False
-
     start_msg = await message.reply_text("💾 Database hazırlanıyor, lütfen bekleyin...")
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_name = f"veritabanı_{timestamp}.json"
-    
     tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
     tmp_file_path = tmp_file.name
     tmp_file.close()
 
     try:
-        collections = db.list_collection_names()
-        total_docs = sum(db[col].count_documents({}) for col in collections)
-        processed_docs = 0
-        start_time = time.time()
+        # Tüm koleksiyonları tek sözlükte birleştir
+        db_data = {}
+        for col_name in db.list_collection_names():
+            db_data[col_name] = list(db[col_name].find({}))
 
+        # Tek JSON dosyası olarak kaydet
         with open(tmp_file_path, "w", encoding="utf-8") as f:
-            f.write("{")
-            for i, col_name in enumerate(collections):
-                if cancel_process:
-                    await start_msg.edit_text("❌ İşlem kullanıcı tarafından iptal edildi.")
-                    return
-
-                if i != 0:
-                    f.write(",")
-
-                f.write(f'"{col_name}": [')
-                col_cursor = db[col_name].find({})
-                first_doc = True
-                for doc in col_cursor:
-                    if cancel_process:
-                        await start_msg.edit_text("❌ İşlem kullanıcı tarafından iptal edildi.")
-                        return
-
-                    if not first_doc:
-                        f.write(",")
-                    else:
-                        first_doc = False
-
-                    f.write(json.dumps(doc, default=str, ensure_ascii=False))
-                    processed_docs += 1
-
-                    # Tahmini süreyi her 50 belge de bir güncelle
-                    if processed_docs % 50 == 0 or processed_docs == total_docs:
-                        elapsed = time.time() - start_time
-                        remaining = (elapsed / processed_docs) * (total_docs - processed_docs) if processed_docs else 0
-                        await start_msg.edit_text(
-                            f"💾 Database hazırlanıyor...\n"
-                            f"İlerleme: {processed_docs}/{total_docs} belgeler\n"
-                            f"Tahmini kalan süre: {int(remaining)} saniye"
-                        )
-
-                f.write("]")
-            f.write("}")
+            json.dump(db_data, f, default=str, ensure_ascii=False)
 
         # Telegram'a gönder
         await client.send_document(
             chat_id=message.chat.id,
             document=tmp_file_path,
-            file_name=file_name,
             caption=f"📂 Veritabanı: {db_name} ({timestamp})"
         )
 
@@ -113,10 +70,3 @@ async def download_database(client, message: Message):
     finally:
         if os.path.exists(tmp_file_path):
             os.remove(tmp_file_path)
-
-# ------------ /iptal Komutu (İşlemi durdurmak için) ------------
-@Client.on_message(filters.command("iptal") & filters.private & CustomFilters.owner)
-async def cancel_database_export(client, message: Message):
-    global cancel_process
-    cancel_process = True
-    await message.reply_text("❌ Database indirme işlemi iptal ediliyor...")
