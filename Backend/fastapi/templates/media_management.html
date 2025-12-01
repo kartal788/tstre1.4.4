@@ -12,11 +12,11 @@
         </div>
         
         <div class="flex space-x-2">
-            <a href="/deneme/media/manage?media_type=movie" 
+            <a href="/media/manage?media_type=movie" 
                class="px-4 py-2 rounded-md transition-colors text-sm font-medium {% if media_type == 'movie' %}theme-primary text-white{% else %}theme-card border hover:bg-gray-50{% endif %}">
                 Filmler
             </a>
-            <a href="/deneme/media/manage?media_type=tv" 
+            <a href="/media/manage?media_type=tv" 
                class="px-4 py-2 rounded-md transition-colors text-sm font-medium {% if media_type == 'tv' %}theme-primary text-white{% else %}theme-card border hover:bg-gray-50{% endif %}">
                 Diziler
             </a>
@@ -148,7 +148,7 @@ async function loadMedia(page = 1, search = '') {
     currentSearch = search;
     
     try {
-        const url = `/deneme/api/media/list?media_type=${mediaType}&page=${page}&page_size=24&search=${encodeURIComponent(search)}`;
+        const url = `/api/media/list?media_type=${mediaType}&page=${page}&page_size=24&search=${encodeURIComponent(search)}`;
         console.log('Fetching:', url);
         
         const response = await fetch(url, {
@@ -233,7 +233,7 @@ function createMediaCard(item) {
                     ${rating ? `<span>${rating}</span>` : ''}
                 </div>
                 <div class="flex justify-between items-center">
-                    <a href="/deneme/media/edit?tmdb_id=${item.tmdb_id}&db_index=${item.db_index}&media_type=${mediaType}" 
+                    <a href="/media/edit?tmdb_id=${item.tmdb_id}&db_index=${item.db_index}&media_type=${mediaType}" 
                        class="text-primary hover:underline text-xs font-medium px-2 py-1 rounded transition-colors hover:bg-blue-50">
                         Düzenle
                     </a>
@@ -366,7 +366,7 @@ async function deleteMedia(tmdbId, dbIndex, title) {
     if (!confirm(`"${title} silmek istediğinizden emin misiniz?"\n\nBu işlem geri alınamaz.`)) return;
     
     try {
-        const response = await fetch(`/deneme/api/media/delete?tmdb_id=${tmdbId}&db_index=${dbIndex}&media_type=${mediaType}`, {
+        const response = await fetch(`/api/media/delete?tmdb_id=${tmdbId}&db_index=${dbIndex}&media_type=${mediaType}`, {
             method: 'DELETE',
             credentials: 'same-origin',
             headers: {
