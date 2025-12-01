@@ -59,6 +59,10 @@ def get_system_status():
 def format_size(size):
     tb = 1024**4
     gb = 1024**3
+    try:
+        size = float(size)
+    except Exception:
+        size = 0.0
     if size >= tb:
         return f"{size/tb:.2f}TB"
     elif size >= gb:
@@ -76,6 +80,28 @@ def load_traffic():
             return {"daily": {}, "monthly": {}, "last": {}}
 
 def save_traffic(data):
+    # ensure only json-serializable primitives are saved (ints/floats for totals)
+    # convert any legacy dict daily/monthly entries into totals (defensive)
+    def normalize_entry(v):
+        if isinstance(v, dict):
+            # legacy dict might have 'upload' and 'download'
+            return int(v.get("upload", 0)) + int(v.get("download", 0))
+        try:
+            return int(v)
+        except:
+            try:
+                return int(float(v))
+            except:
+                return 0
+
+    data = data.copy()
+    data.setdefault("daily", {})
+    data.setdefault("monthly", {})
+    data.setdefault("last", {})
+    # normalize daily/monthly entries
+    data["daily"] = {k: normalize_entry(v) for k, v in data["daily"].items()}
+    data["monthly"] = {k: normalize_entry(v) for k, v in data["monthly"].items()}
+
     with open(TRAFFIC_FILE, "w") as f:
         json.dump(data, f)
 
@@ -83,7 +109,22 @@ def get_network_usage():
     counters = net_io_counters()
     return counters.bytes_sent, counters.bytes_recv
 
-# ---------------- Düzeltilmiş Trafik Hesaplama ----------------
+# ---------------- Düzeltilmiş Trafik Hesaplama (Legacy-safe) ----------------
+def _to_total_if_legacy(val):
+    """
+    Eğer val bir dict ise (legacy: {"upload":..,"download":..}) onu toplam int'e çevir.
+    Aksi halde int olarak döner (güvenli).
+    """
+    if isinstance(val, dict):
+        return int(val.get("upload", 0)) + int(val.get("download", 0))
+    try:
+        return int(val)
+    except:
+        try:
+            return int(float(val))
+        except:
+            return 0
+
 def update_traffic_stats():
     data = load_traffic()
     today = datetime.utcnow().strftime("%Y-%m-%d")
@@ -92,52 +133,57 @@ def update_traffic_stats():
     sent, recv = get_network_usage()
     total = sent + recv
 
-    # Önceki sayaçlar
-    last_sent = data.get("last", {}).get("sent", sent)
-    last_recv = data.get("last", {}).get("recv", recv)
-    last_total = last_sent + last_recv
+    # Önceki sayaçlar (last), yoksa mevcut değer kullanılır (ilk sefer için)
+    last_sent = _to_total_if_legacy(data.get("last", {}).get("sent", sent))
+    last_recv = _to_total_if_legacy(data.get("last", {}).get("recv", recv))
 
-    # Günlük fark
-    diff_sent = max(sent - last_sent, 0)
-    diff_recv = max(recv - last_recv, 0)
+    # Günlük fark (sadece pozitif fark alınır)
+    diff_sent = max(int(sent) - int(last_sent), 0)
+    diff_recv = max(int(recv) - int(last_recv), 0)
     diff_total = diff_sent + diff_recv
 
-    # Günlük ekle
+    # Günlük toplam önceki tipleri normalize ederek al
     data.setdefault("daily", {})
-    data["daily"].setdefault(today, 0)
-    data["daily"][today] += diff_total
+    existing_today = data["daily"].get(today, 0)
+    existing_today_total = _to_total_if_legacy(existing_today)
 
-    # Aylık ekle
+    # Aylık önceki tipleri normalize ederek al
     data.setdefault("monthly", {})
-    data["monthly"].setdefault(month, 0)
-    data["monthly"][month] += diff_total
+    existing_month_total = _to_total_if_legacy(data["monthly"].get(month, 0))
+
+    # Günlük ve aylık toplamları güvenli şekilde arttır
+    data["daily"][today] = existing_today_total + diff_total
+    data["monthly"][month] = existing_month_total + diff_total
 
     # Sayaç güncelle
-    data["last"] = {"sent": sent, "recv": recv}
+    data["last"] = {"sent": int(sent), "recv": int(recv)}
 
+    # Kaydet (normalize et ve yaz)
     save_traffic(data)
 
-    # Son 15 gün raporu
+    # Son 15 gün raporu (0 olanları atla)
     last_15_days = []
     for i in range(15):
         d = (datetime.utcnow() - timedelta(days=i)).strftime("%Y-%m-%d")
-        if d in data["daily"] and data["daily"][d] > 0:
-            last_15_days.append((d, format_size(data["daily"][d])))
+        val = _to_total_if_legacy(data["daily"].get(d, 0))
+        if val > 0:
+            last_15_days.append((d, format_size(val)))
 
     daily_total = data["daily"].get(today, 0)
     month_total = data["monthly"].get(month, 0)
     total_traffic = total
 
+    # Döndürülen değerler string format_size ile dönülüyor (kullanım uyumlu)
     return (
-        format_size(diff_sent),
-        format_size(diff_recv),
-        format_size(daily_total),
-        format_size(month_total),
-        format_size(sent),
-        format_size(recv),
-        format_size(daily_total),
-        format_size(month_total),
-        format_size(total_traffic),
+        format_size(diff_sent),      # bugünkü upload farkı (gönderme)
+        format_size(diff_recv),      # bugünkü download farkı (alım)
+        format_size(daily_total),    # bugünkü toplam (upload+download)
+        format_size(month_total),    # bu ay toplam
+        format_size(sent),           # sayaç: toplam gönderilen
+        format_size(recv),           # sayaç: toplam alınan
+        format_size(daily_total),    # duplicate uyumluluk (önceki API ile)
+        format_size(month_total),    # duplicate uyumluluk
+        format_size(total_traffic),  # makine açıldığından beri toplam sayaç
         last_15_days
     )
 
