@@ -39,7 +39,7 @@ db = client_db[db_name]
 cancel_process = False
 
 # ------------ /dbindir Komutu ------------
-@Client.on_message(filters.command("dbindir") & filters.private & CustomFilters.owner)
+@Client.on_message(filters.command("vtindir") & filters.private & CustomFilters.owner)
 async def download_database(client, message: Message):
     global cancel_process
     cancel_process = False
