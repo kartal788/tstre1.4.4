@@ -1,11 +1,13 @@
 from pyrogram import Client, filters, enums
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from pymongo import MongoClient
-from psutil import virtual_memory, cpu_percent, disk_usage, net_io_counters
+from psutil import virtual_memory, cpu_percent, disk_usage
 from time import time
 from datetime import datetime, timedelta
 import os
 import importlib.util
+
+from Backend.helper.custom_filter import CustomFilters  # <-- CustomFilters buraya eklendi
 
 CONFIG_PATH = "/home/debian/dfbot/config.env"
 DOWNLOAD_DIR = "/"
@@ -30,14 +32,19 @@ def get_db_urls():
 # ---------------- Database İstatistikleri ----------------
 def get_db_stats(url):
     client = MongoClient(url)
+
     db_name_list = client.list_database_names()
     if not db_name_list:
         return 0, 0, 0.0
+
     db = client[db_name_list[0]]
+
     movies = db["movie"].count_documents({})
     series = db["tv"].count_documents({})
+
     stats = db.command("dbstats")
     storage_mb = round(stats.get("storageSize", 0) / (1024 * 1024), 2)
+
     return movies, series, storage_mb
 
 
@@ -46,55 +53,54 @@ def get_system_status():
     cpu = round(cpu_percent(interval=1), 1)
     ram = round(virtual_memory().percent, 1)
     disk = disk_usage(DOWNLOAD_DIR)
-    free_disk = round(disk.free / (1024 ** 3), 2)  # GB
+    free_disk = round(disk.free / (1024 ** 3), 2)
     free_percent = round((disk.free / disk.total) * 100, 1)
     uptime_sec = int(time() - bot_start_time)
     h, r = divmod(uptime_sec, 3600)
     m, s = divmod(r, 60)
-    uptime = f"{h}s{m}d{s}s"
+    uptime = f"{h}s {m}d {s}s"
     return cpu, ram, free_disk, free_percent, uptime
 
 
 # ---------------- Ağ Trafiği ----------------
-def format_size(size_bytes):
+def format_size(size):
+    tb = 1024 ** 4
     gb = 1024 ** 3
     mb = 1024 ** 2
-    if size_bytes >= gb:
-        return f"{size_bytes/gb:.2f} GB"
+    if size >= tb:
+        return f"{size / tb:.2f}TB"
+    elif size >= gb:
+        return f"{size / gb:.2f}GB"
     else:
-        return f"{size_bytes/mb:.2f} MB"
+        return f"{size / mb:.2f}MB"
 
 
 def get_network_usage():
-    counters = net_io_counters()
+    import psutil
+    counters = psutil.net_io_counters()
     return counters.bytes_sent, counters.bytes_recv
 
 
-# ---------------- Trafik İstatistikleri ----------------
-def get_daily_and_monthly_stats(db_url):
+# ---------------- Trafik Verisi ----------------
+def update_traffic_stats(db_url):
     client = MongoClient(db_url)
     db = client["TrafficStats"]
     col = db["daily_usage"]
 
-    today_str = datetime.utcnow().strftime("%Y-%m-%d")
-    month_str = datetime.utcnow().strftime("%Y-%m")
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    month_start = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
 
-    # Günlük ve aylık verileri al
-    daily = col.find_one({"date": today_str}) or {"upload": 0, "download": 0}
-    month = col.find_one({"date": month_str}) or {"upload": 0, "download": 0}
+    upload, download = get_network_usage()
 
-    # Son 30 gün detay
-    last_30_days = []
-    for i in range(30):
-        day = datetime.utcnow() - timedelta(days=i)
-        day_str = day.strftime("%Y-%m-%d")
-        day_data = col.find_one({"date": day_str}) or {"upload": 0, "download": 0}
-        last_30_days.append(
-            f"{i+1}. Gün → Yüklenen: {format_size(day_data['upload'])} | İndirilen: {format_size(day_data['download'])}"
-        )
-    last_30_days.reverse()  # Eski günler başta
+    # Günlük veri
+    col.update_one({"date": today}, {"$set": {"upload": upload, "download": download}}, upsert=True)
 
-    return daily, month, last_30_days
+    # 30 günlük veri
+    thirty_days = list(col.find({"date": {"$gte": month_start}}))
+    total_up = sum(d.get("upload", 0) for d in thirty_days)
+    total_down = sum(d.get("download", 0) for d in thirty_days)
+
+    return format_size(upload), format_size(download), format_size(total_up), format_size(total_down), thirty_days
 
 
 # ---------------- /istatistik Komutu ----------------
@@ -107,66 +113,40 @@ async def send_statistics(client: Client, message: Message):
             movies, series, storage_mb = get_db_stats(db_urls[1])
 
         cpu, ram, free_disk, free_percent, uptime = get_system_status()
-        daily, month, last_30_days = get_daily_and_monthly_stats(db_urls[0])
+        daily_up, daily_down, total_up, total_down, thirty_days = update_traffic_stats(db_urls[0])
 
-        # Ana mesaj
-        main_text = (
+        text = (
             f"⌬ <b>İstatistik</b>\n"
             f"│\n"
-            f"┠ Filmler: {movies}\n"
-            f"┠ Diziler: {series}\n"
-            f"┖ Depolama: {storage_mb} MB\n\n"
-            f"┟ CPU → {cpu}% | Boş → {free_disk}GB [{free_percent}%]\n"
-            f"┖ RAM → {ram}% | Süre → {uptime}\n\n"
-            f"┠ Bugün Yüklenen: {format_size(daily['upload'])}\n"
-            f"┠ Bugün İndirilen: {format_size(daily['download'])}\n"
-            f"┖ Bugün Toplam: {format_size(daily['upload']+daily['download'])}\n\n"
-            f"┠ Bu Ay Yüklenen: {format_size(month['upload'])}\n"
-            f"┖ Bu Ay İndirilen: {format_size(month['download'])}\n"
-            f"┖ Bu Ay Toplam: {format_size(month['upload']+month['download'])}"
+            f"┠ <b>Filmler:</b> {movies}\n"
+            f"┠ <b>Diziler:</b> {series}\n"
+            f"┖ <b>Depolama:</b> {storage_mb} MB\n\n"
+            f"┟ <b>CPU</b> → {cpu}% | <b>Boş</b> → {free_disk}GB [{free_percent}%]\n"
+            f"┖ <b>RAM</b> → {ram}% | <b>Süre</b> → {uptime}\n\n"
+            f"┠ <b>Bugün Yüklenen:</b> {daily_up}\n"
+            f"┖ <b>Bugün İndirilen:</b> {daily_down}\n"
+            f"┠ <b>Son 30 Gün Yüklenen:</b> {total_up}\n"
+            f"┖ <b>Son 30 Gün İndirilen:</b> {total_down}"
         )
 
-        # 30 Gün Detay butonu
         keyboard = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("📅 30 Gün Detay", callback_data="last_30_days_page_0")]]
+            [[InlineKeyboardButton("📄 Son 30 Gün Detay", callback_data="30gün_detay")]]
         )
 
-        sent_message = await message.reply_text(main_text, parse_mode=enums.ParseMode.HTML, reply_markup=keyboard)
-
-        # Mesaj ve 30 gün detayını hafızaya al
-        client.last_30_days = last_30_days
-        client.message_id = sent_message.id
-        client.chat_id = sent_message.chat.id
+        await message.reply_text(text, parse_mode=enums.ParseMode.HTML, reply_markup=keyboard)
 
     except Exception as e:
         await message.reply_text(f"⚠️ Hata: {e}")
         print("istatistik hata:", e)
 
 
-# ---------------- 30 Gün Detay Callback ----------------
-@Client.on_callback_query(filters.regex(r"last_30_days_page_(\d+)"))
-async def last_30_days_callback(client: Client, callback_query: CallbackQuery):
-    page = int(callback_query.data.split("_")[-1])
-    per_page = 10
-    last_30_days = client.last_30_days
+# ---------------- Callback Query ----------------
+@Client.on_callback_query(filters.create(lambda _, __, query: query.data == "30gün_detay") & CustomFilters.owner)
+async def show_30day_detail(client: Client, query):
+    db_urls = get_db_urls()
+    _, _, _, _, thirty_days = update_traffic_stats(db_urls[0])
+    text = "<b>📄 Son 30 Gün Detay</b>\n\n"
+    for day in thirty_days:
+        text += f"{day['date']} → Yüklenen: {format_size(day.get('upload',0))} | İndirilen: {format_size(day.get('download',0))}\n"
 
-    start = page * per_page
-    end = start + per_page
-    page_text = "\n".join(last_30_days[start:end])
-
-    # Sayfa butonları
-    keyboard = []
-    if start > 0:
-        keyboard.append(InlineKeyboardButton("⬅️ Önceki", callback_data=f"last_30_days_page_{page-1}"))
-    if end < len(last_30_days):
-        keyboard.append(InlineKeyboardButton("➡️ Sonraki", callback_data=f"last_30_days_page_{page+1}"))
-    markup = InlineKeyboardMarkup([keyboard] if keyboard else [])
-
-    await client.edit_message_text(
-        chat_id=callback_query.message.chat.id,
-        message_id=callback_query.message.id,
-        text=f"📅 <b>Son 30 Gün Detay (Sayfa {page+1}):</b>\n{page_text}",
-        parse_mode=enums.ParseMode.HTML,
-        reply_markup=markup
-    )
-    await callback_query.answer()
+    await query.message.edit_text(text, parse_mode=enums.ParseMode.HTML)
