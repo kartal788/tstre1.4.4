@@ -6,28 +6,13 @@ from psutil import virtual_memory, cpu_percent, disk_usage
 from time import time
 import os
 import importlib.util
+import docker
+import shutil
 
 CONFIG_PATH = "/home/debian/dfbot/config.env"
 DOWNLOAD_DIR = "/"
+DOCKER_CONTAINER_NAME = "dfbot_container_name"  # Docker konteyner ismini değiştir
 bot_start_time = time()
-
-# ---------------- RAM'de Aylık Trafik ----------------
-# Her entry: {"upload": X, "download": Y, "time": timestamp}
-monthly_traffic = []
-
-def log_transfer(file_size_mb, upload=True):
-    """Geçici RAM kaydı, Docker kapandığında silinir"""
-    monthly_traffic.append({
-        "time": int(time()),
-        "upload": file_size_mb if upload else 0,
-        "download": 0 if upload else file_size_mb
-    })
-
-def calculate_monthly_traffic():
-    total_upload = sum(x["upload"] for x in monthly_traffic)
-    total_download = sum(x["download"] for x in monthly_traffic)
-    total = total_upload + total_download
-    return round(total_upload, 2), round(total_download, 2), round(total, 2)
 
 
 # ---------------- Config Database Okuma ----------------
@@ -73,6 +58,32 @@ def get_system_status():
     return cpu, ram, free_disk, free_percent, uptime
 
 
+# ---------------- Docker Trafik ve Disk ----------------
+def get_docker_stats():
+    try:
+        client = docker.from_env()
+        container = client.containers.get(Telegram-Stremio)
+        stats = container.stats(stream=False)
+
+        # Ağ
+        net = stats["networks"].get("eth0") or list(stats["networks"].values())[0]
+        download_mb = round(net["rx_bytes"] / (1024 * 1024), 2)
+        upload_mb = round(net["tx_bytes"] / (1024 * 1024), 2)
+        total_mb = round(download_mb + upload_mb, 2)
+
+        # Disk (volume veya rootfs)
+        disk_path = DOWNLOAD_DIR
+        total, used, free = shutil.disk_usage(disk_path)
+        disk_gb = round(used / (1024 ** 3), 2)
+        free_gb = round(free / (1024 ** 3), 2)
+
+        return download_mb, upload_mb, total_mb, disk_gb, free_gb
+
+    except Exception as e:
+        print("Docker istatistik hatası:", e)
+        return 0, 0, 0, 0, 0
+
+
 # ---------------- /istatistik Komutu ----------------
 @Client.on_message(filters.command("istatistik") & filters.private & CustomFilters.owner)
 async def send_statistics(client: Client, message: Message):
@@ -83,23 +94,23 @@ async def send_statistics(client: Client, message: Message):
             movies, series, storage_mb = get_db_stats(db_urls[1])
 
         cpu, ram, free_disk, free_percent, uptime = get_system_status()
-        upload_mb, download_mb, total_mb = calculate_monthly_traffic()
+        download_mb, upload_mb, total_mb, disk_used, disk_free = get_docker_stats()
 
         text = (
             f"⌬ <b>İstatistik</b>\n"
             f"│\n"
-            f"┠ <b>Filmler:</b> {movies}\n"
-            f"┠ <b>Diziler:</b> {series}\n"
-            f"┖ <b>Depolama:</b> {storage_mb} MB\n\n"
-            f"┠ Bu Ay Upload: {upload_mb} MB\n"
+            f"┠ Filmler: {movies}\n"
+            f"┠ Diziler: {series}\n"
+            f"┖ Depolama: {storage_mb} MB\n\n"
             f"┠ Bu Ay Download: {download_mb} MB\n"
+            f"┠ Bu Ay Upload: {upload_mb} MB\n"
             f"┖ Bu Ay Toplam: {total_mb} MB\n\n"
-            f"┟ CPU → {cpu}% | Boş → {free_disk}GB [{free_percent}%]\n"
+            f"┟ CPU → {cpu}% | Boş → {disk_free}GB [{free_percent}%]\n"
             f"┖ RAM → {ram}% | Süre → {uptime}"
         )
 
         await message.reply_text(text, parse_mode=enums.ParseMode.HTML, quote=True)
 
     except Exception as e:
-        print("istatistik hata:", e)
         await message.reply_text(f"⚠️ Hata: {e}")
+        print("istatistik hata:", e)
