@@ -13,7 +13,7 @@ bot_start_time = time()
 DAILY_FILE = "daily_traffic.json"
 PAGE_SIZE = 30  # Her sayfa 30 günlük trafik
 
-# ---------------- JSON Yardımcı ----------------
+# ---------------- Yardımcı Fonksiyonlar ----------------
 def load_json(path):
     if not os.path.exists(path):
         return {}
@@ -30,7 +30,6 @@ def format_bytes(b):
     if b >= gb: return f"{b/gb:.2f}GB"
     return f"{b/mb:.2f}MB"
 
-# ---------------- Trafik Güncelle ----------------
 def update_daily_traffic():
     today = datetime.utcnow().strftime("%d.%m.%Y")
     counters = net_io_counters()
@@ -38,7 +37,6 @@ def update_daily_traffic():
     daily[today] = {"upload": counters.bytes_sent, "download": counters.bytes_recv}
     save_json(DAILY_FILE, daily)
 
-# ---------------- Trafik Metni ----------------
 def get_monthly_totals():
     daily = load_json(DAILY_FILE)
     now = datetime.utcnow()
@@ -50,7 +48,7 @@ def get_monthly_totals():
             total_down += data["download"]
     return total_up, total_down, total_up + total_down
 
-def get_daily_page_text(page_index=0):
+def get_daily_page_text(page_index=1):
     daily = load_json(DAILY_FILE)
     dates = sorted(daily.keys(), reverse=True)
     start = (page_index-1)*PAGE_SIZE
@@ -73,17 +71,15 @@ def get_daily_page_text(page_index=0):
     )
     return "\n".join(lines) + total_line
 
-# ---------------- Klavye ----------------
 def get_keyboard(page_index, max_page):
     row = []
     if page_index > 0:
-        row.append(InlineKeyboardButton("◀️ Geri", callback_data=f"prev:{page_index}"))
+        row.append(InlineKeyboardButton("◀️ Geri", callback_data=f"page:{page_index-1}"))
     if page_index < max_page:
-        row.append(InlineKeyboardButton("İleri ▶️", callback_data=f"next:{page_index}"))
+        row.append(InlineKeyboardButton("İleri ▶️", callback_data=f"page:{page_index+1}"))
     row.append(InlineKeyboardButton("❌ İptal", callback_data="cancel"))
     return InlineKeyboardMarkup([row])
 
-# ---------------- Config Database ----------------
 def read_database_from_config():
     if not os.path.exists(CONFIG_PATH):
         return None
@@ -108,7 +104,6 @@ def get_db_stats(url):
     storage_mb = round(stats.get("storageSize", 0)/(1024*1024),2)
     return movies, series, storage_mb
 
-# ---------------- Sistem Durumu ----------------
 def get_system_status():
     cpu = round(cpu_percent(interval=1),1)
     ram = round(virtual_memory().percent,1)
@@ -121,7 +116,6 @@ def get_system_status():
     uptime = f"{h}s{m}d{s}s"
     return cpu, ram, free_disk, free_percent, uptime
 
-# ---------------- Metin Oluştur ----------------
 def get_page_text(page_index=0, movies=0, series=0, storage_mb=0):
     if page_index == 0:
         cpu, ram, free_disk, free_percent, uptime = get_system_status()
@@ -147,7 +141,7 @@ async def send_statistics(client: Client, message: Message):
     try:
         update_daily_traffic()
         daily = load_json(DAILY_FILE)
-        total_pages = max(1, (len(daily)-1)//PAGE_SIZE + 1)
+        total_pages = max(0, (len(daily)-1)//PAGE_SIZE)
 
         db_urls = get_db_urls()
         movies = series = storage_mb = 0
@@ -157,41 +151,34 @@ async def send_statistics(client: Client, message: Message):
         text = get_page_text(0, movies, series, storage_mb)
         keyboard = get_keyboard(0, total_pages)
         await message.reply_text(text, parse_mode=enums.ParseMode.HTML, reply_markup=keyboard)
-    except Exception as e:
-        await message.reply_text(f"⚠️ Hata: {e}")
-        print("istatistik hata:", e)
+    except:
+        await message.reply_text("⚠️ Bir hata oluştu.")
 
 # ---------------- Callback ----------------
 @Client.on_callback_query()
 async def cb(c: Client, q: CallbackQuery):
-    daily = load_json(DAILY_FILE)
-    total_pages = max(1, (len(daily)-1)//PAGE_SIZE + 1)
+    try:
+        daily = load_json(DAILY_FILE)
+        total_pages = max(0, (len(daily)-1)//PAGE_SIZE)
 
-    if q.data.startswith("prev:"):
-        page = int(q.data.split(":")[1])
-    elif q.data.startswith("next:"):
-        page = int(q.data.split(":")[1])
-    elif q.data == "cancel":
-        await q.message.delete()
-        await q.answer("İstatistik kapatıldı.")
-        return
-    else:
+        if q.data.startswith("page:"):
+            page = int(q.data.split(":")[1])
+        elif q.data == "cancel":
+            await q.message.delete()
+            await q.answer("İstatistik kapatıldı.")
+            return
+        else:
+            await q.answer()
+            return
+
+        db_urls = get_db_urls()
+        movies = series = storage_mb = 0
+        if len(db_urls)>=2:
+            movies, series, storage_mb = get_db_stats(db_urls[1])
+
+        text = get_page_text(page, movies, series, storage_mb)
+        keyboard = get_keyboard(page, total_pages)
+        await q.message.edit_text(text, parse_mode=enums.ParseMode.HTML, reply_markup=keyboard)
         await q.answer()
-        return
-
-    db_urls = get_db_urls()
-    movies = series = storage_mb = 0
-    if len(db_urls)>=2:
-        movies, series, storage_mb = get_db_stats(db_urls[1])
-
-    text = get_page_text(page, movies, series, storage_mb)
-    if page > 0:
-        # Sayfa 1 ve sonrası: CPU/RAM/Disk eklemek istemiyorsan burayı boş bırak
-        pass
-    else:
-        cpu, ram, free_disk, free_percent, uptime = get_system_status()
-        text += f"\n\n┟ CPU → {cpu}% | Boş → {free_disk}GB [{free_percent}%]\n┖ RAM → {ram}% | Süre → {uptime}"
-
-    keyboard = get_keyboard(page, total_pages)
-    await q.message.edit_text(text, parse_mode=enums.ParseMode.HTML, reply_markup=keyboard)
-    await q.answer()
+    except:
+        await q.answer("⚠️ Hata oluştu.")
