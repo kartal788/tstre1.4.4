@@ -80,8 +80,7 @@ async def send_statistics(client: Client, message: Message):
         cpu, ram, free_disk, free_percent, uptime = get_system_status()
 
         text = (
-            f"⌬ <b>İstatistik</b>\n"
-            f"│\n"
+            f"⌬ <b>İstatistik</b>\n\n"
             f"┠ <b>Filmler:</b> {movies}\n"
             f"┠ <b>Diziler:</b> {series}\n"
             f"┖ <b>Depolama:</b> {storage_mb} ({storage_percent}%)\n\n"
