@@ -33,7 +33,7 @@ def get_db_stats(url):
 
     db_name_list = client.list_database_names()
     if not db_name_list:
-        return 0, 0, 0.0
+        return 0, 0, 0.0, 0.0
 
     db = client[db_name_list[0]]
 
@@ -43,7 +43,10 @@ def get_db_stats(url):
     stats = db.command("dbstats")
     storage_mb = round(stats.get("storageSize", 0) / (1024 * 1024), 2)
 
-    return movies, series, storage_mb
+    max_storage_mb = 512
+    storage_percent = round((storage_mb / max_storage_mb) * 100, 1)
+
+    return movies, series, storage_mb, storage_percent
 
 
 # ---------------- Sistem Durumu ----------------
@@ -58,7 +61,7 @@ def get_system_status():
     uptime_sec = int(time() - bot_start_time)
     h, r = divmod(uptime_sec, 3600)
     m, s = divmod(r, 60)
-    uptime = f"{h}h{m}m{s}s"
+    uptime = f"{h}s {m}d {s}s"
 
     return cpu, ram, free_disk, free_percent, uptime
 
@@ -69,10 +72,10 @@ async def send_statistics(client: Client, message: Message):
     try:
         db_urls = get_db_urls()
 
-        movies = series = storage_mb = 0
+        movies = series = storage_mb = storage_percent = 0
 
         if len(db_urls) >= 2:
-            movies, series, storage_mb = get_db_stats(db_urls[1])
+            movies, series, storage_mb, storage_percent = get_db_stats(db_urls[1])
 
         cpu, ram, free_disk, free_percent, uptime = get_system_status()
 
@@ -81,9 +84,9 @@ async def send_statistics(client: Client, message: Message):
             f"│\n"
             f"┠ <b>Filmler:</b> {movies}\n"
             f"┠ <b>Diziler:</b> {series}\n"
-            f"┖ <b>Depolama:</b> {storage_mb} MB\n\n"
-            f"┟ <b>CPU</b> → {cpu}% | <b>Boş Alan</b> → {free_disk}GB [{free_percent}%]\n"
-            f"┖ <b>RAM</b> → {ram}% | <b>UP</b> → {uptime}"
+            f"┖ <b>Depolama:</b> {storage_mb} ({storage_percent}%)\n\n"
+            f"┟ <b>CPU</b> → {cpu}% | <b>Boş</b> → {free_disk}GB [{free_percent}%]\n"
+            f"┖ <b>RAM</b> → {ram}% | <b>Süre</b> → {uptime}"
         )
 
         await message.reply_text(text, parse_mode=enums.ParseMode.HTML, quote=True)
