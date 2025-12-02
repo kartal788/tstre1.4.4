@@ -2,13 +2,13 @@ from pyrogram import Client, filters, enums
 from pyrogram.types import Message
 from Backend.helper.custom_filter import CustomFilters
 from pymongo import MongoClient
-from psutil import virtual_memory, cpu_percent, disk_usage, disk_partitions
+from psutil import virtual_memory, cpu_percent, disk_usage
 from time import time
 import os
 import importlib.util
 
-
 CONFIG_PATH = "/home/debian/tstre1.4.4/config.py"
+DOWNLOAD_DIR = "/"
 bot_start_time = time()
 
 
@@ -25,24 +25,6 @@ def read_database_from_config():
 def get_db_urls():
     db_raw = read_database_from_config() or os.getenv("DATABASE") or ""
     return [u.strip() for u in db_raw.split(",") if u.strip()]
-
-
-# ---------------- Docker-Aware Gerçek Disk Ölçümü ----------------
-def get_real_disk_usage():
-    mounts = disk_partitions(all=False)
-
-    ignore = ("overlay", "squashfs", "tmpfs", "devtmpfs", "shm")
-
-    real_devices = [m for m in mounts if not any(fs in m.fstype for fs in ignore)]
-
-    if not real_devices:
-        disk = disk_usage("/")
-        return disk.total, disk.used, disk.free
-
-    best = max(real_devices, key=lambda m: disk_usage(m.mountpoint).total)
-    disk = disk_usage(best.mountpoint)
-
-    return disk.total, disk.used, disk.free
 
 
 # ---------------- Database İstatistikleri ----------------
@@ -72,15 +54,14 @@ def get_system_status():
     cpu = round(cpu_percent(interval=1), 1)
     ram = round(virtual_memory().percent, 1)
 
-    total, used, free = get_real_disk_usage()
-
-    free_disk = round(free / (1024 ** 3), 2)
-    free_percent = round((free / total) * 100, 1)
+    disk = disk_usage(DOWNLOAD_DIR)
+    free_disk = round(disk.free / (1024 ** 3), 2)  # GB
+    free_percent = round((disk.free / disk.total) * 100, 1)
 
     uptime_sec = int(time() - bot_start_time)
     h, r = divmod(uptime_sec, 3600)
     m, s = divmod(r, 60)
-    uptime = f"{h}h{m}m{s}s"
+    uptime = f"{h}s {m}d {s}s"
 
     return cpu, ram, free_disk, free_percent, uptime
 
@@ -99,13 +80,12 @@ async def send_statistics(client: Client, message: Message):
         cpu, ram, free_disk, free_percent, uptime = get_system_status()
 
         text = (
-            f"⌬ <b>İstatistik</b>\n"
-            f"│\n"
+            f"⌬ <b>İstatistik</b>\n\n"
             f"┠ <b>Filmler:</b> {movies}\n"
             f"┠ <b>Diziler:</b> {series}\n"
-            f"┖ <b>Depolama:</b> {storage_mb}MB / 512MB ({storage_percent}%)\n\n"
-            f"┟ <b>CPU</b> → {cpu}% | <b>Boş Alan</b> → {free_disk}GB [{free_percent}%]\n"
-            f"┖ <b>RAM</b> → {ram}% | <b>UP</b> → {uptime}"
+            f"┖ <b>Depolama:</b> {storage_mb} ({storage_percent}%)\n\n"
+            f"┟ <b>CPU</b> → {cpu}% | <b>Boş</b> → {free_disk}GB [{free_percent}%]\n"
+            f"┖ <b>RAM</b> → {ram}% | <b>Süre</b> → {uptime}"
         )
 
         await message.reply_text(text, parse_mode=enums.ParseMode.HTML, quote=True)
