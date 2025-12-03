@@ -25,7 +25,7 @@ GENRES = [
     "Bilim Kurgu",
     "Bilim Kurgu ve Fantazi",
     "Biyografi",
-    "Çocuklar"
+    "Çocuklar",
     "Dram",
     "Fantastik",
     "Gerilim",
