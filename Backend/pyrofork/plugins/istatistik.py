@@ -25,22 +25,6 @@ def get_db_urls():
     db_raw = read_database_from_config() or os.getenv("DATABASE") or ""
     return [u.strip() for u in db_raw.split(",") if u.strip()]
 
-# ---------------- Sistem Durumu ----------------
-def get_system_status():
-    cpu = round(cpu_percent(interval=1), 1)
-    ram = round(virtual_memory().percent, 1)
-
-    disk = disk_usage(DOWNLOAD_DIR)
-    free_disk = round(disk.free / (1024 ** 3), 2)  # GB
-    free_percent = round((disk.free / disk.total) * 100, 1)
-
-    uptime_sec = int(time() - bot_start_time)
-    h, rem = divmod(uptime_sec, 3600)
-    m, s = divmod(rem, 60)
-    uptime = f"{h}h {m}m {s}s"
-
-    return cpu, ram, free_disk, free_percent, uptime
-
 # ---------------- Database İstatistikleri ve Tür Bazlı ----------------
 def get_db_stats_and_genres(url):
     client = MongoClient(url)
@@ -67,6 +51,22 @@ def get_db_stats_and_genres(url):
         genre_stats[doc["_id"]]["dizi"] = doc["count"]
 
     return total_movies, total_series, storage_mb, storage_percent, genre_stats
+
+# ---------------- Sistem Durumu ----------------
+def get_system_status():
+    cpu = round(cpu_percent(interval=1), 1)
+    ram = round(virtual_memory().percent, 1)
+
+    disk = disk_usage(DOWNLOAD_DIR)
+    free_disk = round(disk.free / (1024 ** 3), 2)  # GB
+    free_percent = round((disk.free / disk.total) * 100, 1)
+
+    uptime_sec = int(time() - bot_start_time)
+    h, rem = divmod(uptime_sec, 3600)
+    m, s = divmod(rem, 60)
+    uptime = f"{h}h {m}m {s}s"
+
+    return cpu, ram, free_disk, free_percent, uptime
 
 # ---------------- /istatistik Komutu ----------------
 @Client.on_message(filters.command("istatistik") & filters.private & CustomFilters.owner)
