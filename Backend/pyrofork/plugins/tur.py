@@ -1,10 +1,48 @@
+import asyncio
 import time
 from pyrogram import Client, filters, enums
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from Backend.helper.custom_filter import CustomFilters
-from main import stop_event, movie_col, series_col  # stop_event ve koleksiyonlar ana dosyadan import edilmeli
+from pymongo import MongoClient
+import os
+import importlib.util
+import psutil
 
-@Client.on_message(filters.command("tur") & filters.private & CustomFilters.owner)
+# -----------------------
+# stop_event ve MongoDB koleksiyonları burada tanımlanacak
+stop_event = asyncio.Event()
+
+# CONFIG
+CONFIG_PATH = "/home/debian/dfbot/config.env"
+
+def read_database_from_config():
+    if not os.path.exists(CONFIG_PATH):
+        return None
+    spec = importlib.util.spec_from_file_location("config", CONFIG_PATH)
+    config = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config)
+    return getattr(config, "DATABASE", None)
+
+def get_db_urls():
+    db_raw = read_database_from_config()
+    if not db_raw:
+        db_raw = os.getenv("DATABASE", "")
+    return [u.strip() for u in db_raw.split(",") if u.strip()]
+
+db_urls = get_db_urls()
+if len(db_urls) < 2:
+    raise Exception("İkinci DATABASE bulunamadı!")
+
+MONGO_URL = db_urls[1]
+client_db = MongoClient(MONGO_URL)
+db_name = client_db.list_database_names()[0]
+db = client_db[db_name]
+
+movie_col = db["movie"]
+series_col = db["tv"]
+# -----------------------
+
+@Client.on_message(filters.command("tür") & filters.private & CustomFilters.owner)
 async def tur_duzelt(client: Client, message):
     stop_event.clear()
 
@@ -56,7 +94,6 @@ async def tur_duzelt(client: Client, message):
 
             idx += 1
 
-            # Her 5 saniyede bir ilerleme güncellemesi
             if time.time() - last_update > 5:
                 try:
                     await start_msg.edit_text(
@@ -67,7 +104,6 @@ async def tur_duzelt(client: Client, message):
                     pass
                 last_update = time.time()
 
-    # Tamamlandığında özet
     try:
         await start_msg.edit_text(
             f"✅ *Tür güncellemesi tamamlandı!*\n\n"
