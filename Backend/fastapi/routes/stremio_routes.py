@@ -49,7 +49,7 @@ GENRES = [
     "Suç",
     "TV Filmi",
     "Talk-Show",
-    "Tarih"
+    "Tarih",
     "Vahşi Batı"
 ]
 
