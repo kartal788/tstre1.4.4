@@ -52,7 +52,7 @@ async def tur_duzelt(client: Client, message):
     )
 
     genre_map = {
-        "Bilim kurgu": "Bilim Kurgu",
+        "Bilimkurgu": "Bilim Kurgu",
         "Batılı": "Vahşi Batı",
         "Fantezi": "Fantastik",
         "romantik": "Romantik"
