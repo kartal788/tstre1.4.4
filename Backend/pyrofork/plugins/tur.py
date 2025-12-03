@@ -42,7 +42,7 @@ movie_col = db["movie"]
 series_col = db["tv"]
 # -----------------------
 
-@Client.on_message(filters.command("tür") & filters.private & CustomFilters.owner)
+@Client.on_message(filters.command("tur") & filters.private & CustomFilters.owner)
 async def tur_duzelt(client: Client, message):
     stop_event.clear()
 
