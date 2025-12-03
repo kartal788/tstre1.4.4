@@ -56,6 +56,8 @@ async def tur_duzelt(client: Client, message):
         "Batılı": "Vahşi Batı",
         "Fantezi": "Fantastik",
         "Konuşmak": "Talk-Show",
+        "Sabun": "Pembe Dizi",
+        "korku": "Korku",
         "romantik": "Romantik"
     }
 
