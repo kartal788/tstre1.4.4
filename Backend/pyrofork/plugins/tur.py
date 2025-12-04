@@ -137,7 +137,7 @@ async def tur_duzelt(client: Client, message):
     try:
         await start_msg.edit_text(
             f"✅ *Tür güncellemesi tamamlandı!*\n\n"
-            f"Toplam değiştirilen kayıt: *{total_fixed}*\n\n"
+            f"Toplam değiştirilen kayıt: *{total_fixed}*\n\n",
             parse_mode=enums.ParseMode.MARKDOWN
         )
     except:
