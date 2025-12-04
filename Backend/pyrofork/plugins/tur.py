@@ -83,6 +83,7 @@ async def tur_duzelt(client: Client, message):
         "Reality": "Gerçeklik",
         "Reality-TV": "Gerçeklik",
         "Sci-Fi & Fantasy": "Bilim Kurgu ve Fantazi",
+        "Bilim Kurgu & Fantazi": "Bilim Kurgu ve Fantazi",
         "Soap": "Pembe Dizi",
         "War & Politics": "Savaş ve Politika",
         "Talk": "Talk-Show"
