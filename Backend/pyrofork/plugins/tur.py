@@ -55,6 +55,7 @@ async def tur_duzelt(client: Client, message):
         "Action": "Aksiyon",
         "Adventure": "Macera",
         "Animation": "Animasyon",
+        "Biography": "Biyografi",
         "Comedy": "Komedi",
         "Crime": "Suç",
         "Documentary": "Belgesel",
