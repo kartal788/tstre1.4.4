@@ -53,6 +53,8 @@ async def tur_duzelt(client: Client, message):
 
     genre_map = {
         "Action": "Aksiyon",
+        "Sci-Fi": "Bilim Kurgu",
+        "Sport": "Spor",
         "Adventure": "Macera",
         "Animation": "Animasyon",
         "Biography": "Biyografi",
@@ -61,6 +63,7 @@ async def tur_duzelt(client: Client, message):
         "Documentary": "Belgesel",
         "Drama": "Dram",
         "Family": "Aile",
+        "News": "Haberler",
         "Fantasy": "Fantastik",
         "History": "Tarih",
         "Horror": "Korku",
@@ -80,14 +83,7 @@ async def tur_duzelt(client: Client, message):
         "Sci-Fi & Fantasy": "Bilim Kurgu ve Fantazi",
         "Soap": "Pembe Dizi",
         "War & Politics": "Savaş ve Politika",
-        "Talk": "Talk-Show",
-        "Bilimkurgu": "Bilim Kurgu",
-        "Batılı": "Vahşi Batı",
-        "Fantezi": "Fantastik",
-        "Konuşmak": "Talk-Show",
-        "Sabun": "Pembe Dizi",
-        "korku": "Korku",
-        "romantik": "Romantik"
+        "Talk": "Talk-Show"
     }
 
     collections = [
