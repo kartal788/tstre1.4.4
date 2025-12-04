@@ -195,7 +195,7 @@ async def process_collection_parallel(collection, name, message):
                 f"{name}: {done}/{total}\n"
                 f"{progress_bar(done, total)}\n\n"
                 f"Kalan: {remaining}, Hatalar: {errors}\n"
-                f"ETA: {eta_str}\n"
+                f"Süre: {eta_str}\n"
                 f"{sys_info}"
             )
             try:
