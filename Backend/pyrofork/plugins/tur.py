@@ -85,6 +85,9 @@ async def tur_duzelt(client: Client, message):
         "Sci-Fi & Fantasy": "Bilim Kurgu ve Fantazi",
         "Soap": "Pembe Dizi",
         "War & Politics": "Savaş ve Politika",
+        "Aksiyon & Macera": "Aksiyon ve Macera",
+        "Savaş & Politik": "Savaş ve Politika",
+        "Bilim Kurgu & Fantazi": "Bilim Kurgu ve Fantazi",     
         "Talk": "Talk-Show"
     }
 
