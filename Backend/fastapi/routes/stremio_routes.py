@@ -41,7 +41,6 @@ GENRES = [
     "Müzikal",
     "Oyun Gösterisi",
     "Pembe Dizi",
-    "Reality-TV",
     "Romantik",
     "Savaş",
     "Savaş ve Politika",
