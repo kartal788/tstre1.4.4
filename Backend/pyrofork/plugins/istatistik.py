@@ -96,7 +96,7 @@ async def send_statistics(client: Client, message: Message):
             f"┖ Depolama: {storage_mb} MB ({storage_percent}%)\n\n"
             f"<b>Tür Bazlı:</b>\n"
             f"<pre>{genre_text}</pre>\n\n"
-            f"┟ CPU → {cpu}% | Boş Disk → {free_disk}GB [{free_percent}%]\n"
+            f"┟ CPU → {cpu}% | Boş → {free_disk}GB [{free_percent}%]\n"
             f"┖ RAM → {ram}% | Süre → {uptime}"
         )
 
