@@ -8,9 +8,10 @@ import os
 import importlib.util
 
 # -----------------------
-# stop_event ve MongoDB koleksiyonları
+# stop_event ve MongoDB koleksiyonları burada tanımlanacak
 stop_event = asyncio.Event()
 
+# CONFIG
 CONFIG_PATH = "/home/debian/dfbot/config.env"
 
 def read_database_from_config():
@@ -37,89 +38,81 @@ db_name = client_db.list_database_names()[0]
 db = client_db[db_name]
 
 movie_col = db["movie"]
-tv_col = db["tv"]
+series_col = db["tv"]
 # -----------------------
-
-PLATFORMS = {
-    "dsnp": "Disney",
-    "nf": "Netflix",
-    "amzn": "Amazon",
-    "tod": "Tod",
-    "tv+": "TV+",
-    "tvplus": "TV+",
-    "tabii": "Tabii",
-    "exxen": "Exxen",
-    "gain": "Gain",
-
-    # Max grubu
-    "hbo": "Max",
-    "hbomax": "Max",
-    "max": "Max",
-    "blutv": "Max"
-}
 
 @Client.on_message(filters.command("platform") & filters.private & CustomFilters.owner)
 async def platform_duzelt(client: Client, message):
     stop_event.clear()
 
     start_msg = await message.reply_text(
-        "🎬 Platform taraması başlıyor…",
+        "🔧 Platform türleri güncelleniyor…\nİlerleme tek mesajda gösterilecektir.",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
     )
 
+    # telegram.name içindeki anahtar kelimelere göre genres ekleme
+    platform_genre_map = {
+        "MAX": "Max",
+        "NF": "Netflix",
+        "DSNP": "Disney+",
+        "BluRay": "BluRay",
+        "WEB-DL": "WEB-DL",
+        "WEBRip": "WEBRip",
+        "HDRip": "HDRip",
+        "HBO": "HBO",
+        "AMZN": "Amazon Prime",
+    }
+
     collections = [
         (movie_col, "Filmler"),
-        (tv_col, "Diziler")
+        (series_col, "Diziler")
     ]
 
-    total = 0
-    fixed = 0
+    total_fixed = 0
     last_update = 0
 
-    # Her iki koleksiyon için döngü
-    for col, label in collections:
+    for col, name in collections:
+        ids_cursor = col.find({}, {"_id": 1, "telegram": 1, "genres": 1})
+        ids = [d["_id"] for d in ids_cursor]
+        idx = 0
 
-        ids_cursor = col.find({}, {"_id": 1, "name": 1, "genres": 1})
-        ids = list(ids_cursor)
-
-        for doc in ids:
+        while idx < len(ids):
             if stop_event.is_set():
                 break
 
-            total += 1
-            name = doc.get("name", "").lower()
+            doc_id = ids[idx]
+            doc = col.find_one({"_id": doc_id})
+            telegram_list = doc.get("telegram", [])
             genres = doc.get("genres", [])
             updated = False
 
-            for key, platform in PLATFORMS.items():
-                if key in name:
-                    if platform not in genres:
-                        genres.append(platform)
+            for t in telegram_list:
+                name_field = t.get("name", "")
+                for key, genre_name in platform_genre_map.items():
+                    if key in name_field and genre_name not in genres:
+                        genres.append(genre_name)
                         updated = True
-                    break
 
             if updated:
-                col.update_one({"_id": doc["_id"]}, {"$set": {"genres": genres}})
-                fixed += 1
+                col.update_one({"_id": doc_id}, {"$set": {"genres": genres}})
+                total_fixed += 1
 
-            if time.time() - last_update > 4:
+            idx += 1
+
+            if time.time() - last_update > 5:
                 try:
                     await start_msg.edit_text(
-                        f"{label} taranıyor...\n\n"
-                        f"🔍 Toplam taranan: {total}\n"
-                        f"✅ Eklenen platform etiketi: {fixed}",
+                        f"{name}: Güncellenen kayıtlar: {total_fixed}",
                         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
                     )
                 except:
                     pass
                 last_update = time.time()
 
-    # Bitiş mesajı
     try:
         await start_msg.edit_text(
-            f"🎉 **Platform güncellemesi tamamlandı!**\n\n"
-            f"📌 Toplam taranan: {total}\n"
-            f"🏷 Eklenen platform etiketi: {fixed}",
+            f"✅ Platform tür güncellemesi tamamlandı.\n\n"
+            f"Toplam değiştirilen kayıt: {total_fixed}",
             parse_mode=enums.ParseMode.MARKDOWN
         )
     except:
