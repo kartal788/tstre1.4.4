@@ -64,7 +64,7 @@ async def set_theme_route(request: Request, theme: str = Form(...)):
 async def public_status(request: Request):
     return await public_status_page(request)
 
-@app.get("/stremio", response_class=HTMLResponse)
+@app.get("/str", response_class=HTMLResponse)
 async def stremio_guide(request: Request):
     return await stremio_guide_page(request)
 
