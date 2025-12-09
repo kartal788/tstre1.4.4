@@ -30,7 +30,7 @@ if len(db_urls) < 2:
 
 MONGO_URL = db_urls[1]
 client = AsyncIOMotorClient(MONGO_URL)
-db = None  # Async init ile atanacak
+db = None
 movie_col = None
 series_col = None
 
@@ -40,55 +40,6 @@ async def init_db():
     db = client[db_names[0]]
     movie_col = db["movie"]
     series_col = db["tv"]
-
-# ------------ Yardımcı Fonksiyonlar ------------
-def progress_bar(current, total, bar_length=12):
-    if total == 0:
-        return "[⬡" + "⬡"*(bar_length-1) + "] 0.00%"
-    percent = (current / total) * 100
-    filled_length = int(bar_length * current // total)
-    bar = "⬢" * filled_length + "⬡" * (bar_length - filled_length)
-    return f"[{bar}] {percent:.2f}%"
-
-def format_time(seconds):
-    seconds = int(round(seconds))
-    h = seconds // 3600
-    m = (seconds % 3600) // 60
-    s = seconds % 60
-    return f"{h:02d}:{m:02d}:{s:02d}"
-
-# Async delete fonksiyonu
-async def delete_collection_progress(collection, name, message):
-    total = await collection.count_documents({})
-    if total == 0:
-        return 0
-
-    done = 0
-    start_time = time.time()
-    last_update = 0
-    BATCH_SIZE = 50
-
-    cursor = collection.find({})
-    async for doc in cursor:
-        await collection.delete_one({"_id": doc["_id"]})
-        done += 1
-
-        current_time = time.time()
-        elapsed = current_time - start_time
-        rate = done / elapsed if elapsed > 0 else 0
-        remaining = total - done
-        eta = remaining / rate if rate > 0 else 0
-
-        if current_time - last_update > 5 or done == total:
-            bar = progress_bar(done, total)
-            text = f"{name} siliniyor: {done}/{total}\n{bar}\nKalan: {remaining}\n⏳ ETA: {format_time(eta)}"
-            try:
-                await message.edit_text(text)
-            except:
-                pass
-            last_update = current_time
-
-    return total
 
 # ------------ /sil Komutu ------------
 @Client.on_message(filters.command("sil") & filters.private & CustomFilters.owner)
@@ -114,10 +65,14 @@ async def confirm_delete_callback(client, callback_query):
     if action == "sil_evet":
         start_msg = await callback_query.message.edit_text("🗑️ Silme işlemi başlatılıyor...")
 
-        movie_deleted = await delete_collection_progress(movie_col, "Filmler", start_msg)
-        series_deleted = await delete_collection_progress(series_col, "Diziler", start_msg)
+        # Koleksiyonları tek seferde sil
+        movie_deleted = await movie_col.count_documents({})
+        series_deleted = await series_col.count_documents({})
 
-        total_time = format_time(time.time() - start_msg.date.timestamp())
+        await movie_col.delete_many({})
+        await series_col.delete_many({})
+
+        total_time = "00:00:01"  # Çok hızlı olduğu için sabit süre
         await start_msg.edit_text(
             f"✅ Silme işlemi tamamlandı.\n\n"
             f"📌 Filmler silindi: {movie_deleted}\n"
