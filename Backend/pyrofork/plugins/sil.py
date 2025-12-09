@@ -54,26 +54,24 @@ async def confirm_delete(client: Client, message):
         reply_markup=keyboard
     )
 
-# ------------ Onay Callback ------------
-@Client.on_callback_query(filters.regex("confirm_delete"))
-async def delete_data(client, callback_query):
-    await callback_query.answer()  # Butona tıklama animasyonu
-    await init_db()  # DB bağlantısını başlat
+# ------------ Callback Query (Onay ve İptal) ------------
+@Client.on_callback_query()
+async def handle_delete_buttons(client, callback_query):
+    data = callback_query.data
 
-    movie_count = await movie_col.count_documents({})
-    series_count = await series_col.count_documents({})
+    if data == "confirm_delete":
+        await callback_query.answer("Siliniyor...")  # Kullanıcıya tepki gösterir
+        await init_db()
+        movie_count = await movie_col.count_documents({})
+        series_count = await series_col.count_documents({})
+        await movie_col.delete_many({})
+        await series_col.delete_many({})
+        await callback_query.message.edit_text(
+            f"✅ Silme işlemi tamamlandı.\n\n"
+            f"📌 Filmler silindi: {movie_count}\n"
+            f"📌 Diziler silindi: {series_count}"
+        )
 
-    await movie_col.delete_many({})
-    await series_col.delete_many({})
-
-    await callback_query.message.edit_text(
-        f"✅ Silme işlemi tamamlandı.\n\n"
-        f"📌 Filmler silindi: {movie_count}\n"
-        f"📌 Diziler silindi: {series_count}"
-    )
-
-# ------------ İptal Callback ------------
-@Client.on_callback_query(filters.regex("cancel_delete"))
-async def cancel_delete(client, callback_query):
-    await callback_query.answer("İşlem iptal edildi.", show_alert=True)
-    await callback_query.message.edit_text("❌ Silme işlemi iptal edildi.")
+    elif data == "cancel_delete":
+        await callback_query.answer("İşlem iptal edildi.", show_alert=True)
+        await callback_query.message.edit_text("❌ Silme işlemi iptal edildi.")
