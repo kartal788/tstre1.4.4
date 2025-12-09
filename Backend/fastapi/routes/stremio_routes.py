@@ -49,7 +49,16 @@ GENRES = [
     "TV Filmi",
     "Talk-Show",
     "Tarih",
-    "Vahşi Batı"
+    "Vahşi Batı",
+    "Tabii",
+    "Disney",
+    "Netflix",
+    "Max",
+    "Amazon",
+    "Exxen",
+    "Gain",
+    "Tv+",
+    "Tod"
 ]
 
 
