@@ -58,7 +58,8 @@ async def platform_duzelt(client: Client, message):
         "Tv+": "Tv+",
         "Exxen": "Exxen",
         "Gain": "Gain",
-        "HBO": "HBO",
+        "HBO": "Max",
+        "Tabii": "Tabii",
         "AMZN": "Amazon",
     }
 
