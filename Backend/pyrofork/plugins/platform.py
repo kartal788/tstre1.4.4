@@ -45,10 +45,9 @@ async def platform_duzelt(client: Client, message):
 
     start_msg = await message.reply_text(
         "🔧 Platform türleri güncelleniyor…\nİlerleme tek mesajda gösterilecektir.",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]]),
     )
 
-    # telegram.name içindeki anahtar kelimelere göre genres ekleme
     platform_genre_map = {
         "MAX": "Max",
         "Hbomax": "Max",
@@ -72,43 +71,48 @@ async def platform_duzelt(client: Client, message):
     last_update = 0
 
     for col, name in collections:
-        # Tüm belgeleri çek
-        cursor = col.find({}, {"_id": 1, "telegram": 1, "seasons": 1, "genres": 1})
-        for doc in cursor:
+        ids_cursor = col.find({}, {"_id": 1, "telegram": 1, "genres": 1, "seasons": 1})
+        ids = [d["_id"] for d in ids_cursor]
+        idx = 0
+
+        while idx < len(ids):
             if stop_event.is_set():
                 break
 
+            doc_id = ids[idx]
+            doc = col.find_one({"_id": doc_id})
             genres = doc.get("genres", [])
             updated = False
 
-            # Movie veya doğrudan telegram listesi olan belgeler
+            # Movie / dizi telegram listesi
             for t in doc.get("telegram", []):
-                name_field = t.get("name", "")
+                name_field = t.get("name", "").lower()
                 for key, genre_name in platform_genre_map.items():
-                    if key in name_field and genre_name not in genres:
+                    if key.lower() in name_field and genre_name not in genres:
                         genres.append(genre_name)
                         updated = True
 
-            # TV için season -> episode -> telegram
+            # TV ise seasons -> episodes -> telegram
             for season in doc.get("seasons", []):
                 for ep in season.get("episodes", []):
                     for t in ep.get("telegram", []):
-                        name_field = t.get("name", "")
+                        name_field = t.get("name", "").lower()
                         for key, genre_name in platform_genre_map.items():
-                            if key in name_field and genre_name not in genres:
+                            if key.lower() in name_field and genre_name not in genres:
                                 genres.append(genre_name)
                                 updated = True
 
             if updated:
-                col.update_one({"_id": doc["_id"]}, {"$set": {"genres": genres}})
+                col.update_one({"_id": doc_id}, {"$set": {"genres": genres}})
                 total_fixed += 1
 
-            # İlerleme mesajını her 5 saniyede bir güncelle
+            idx += 1
+
             if time.time() - last_update > 5:
                 try:
                     await start_msg.edit_text(
                         f"{name}: Güncellenen kayıtlar: {total_fixed}",
-                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]]),
                     )
                 except:
                     pass
@@ -118,21 +122,7 @@ async def platform_duzelt(client: Client, message):
         await start_msg.edit_text(
             f"✅ Platform tür güncellemesi tamamlandı.\n\n"
             f"Toplam değiştirilen kayıt: {total_fixed}",
-            parse_mode=enums.ParseMode.MARKDOWN
+            parse_mode=enums.ParseMode.MARKDOWN,
         )
     except:
         pass
-
-# Callback: iptal butonu
-@Client.on_callback_query()
-async def handle_stop_callback(client, query):
-    if query.data == "stop":
-        stop_event.set()
-        try:
-            await query.message.edit_text("⛔ İşlem iptal edildi!")
-        except:
-            pass
-        try:
-            await query.answer("Durdurma talimatı alındı.")
-        except:
-            pass
