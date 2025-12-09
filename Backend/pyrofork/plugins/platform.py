@@ -8,10 +8,8 @@ import os
 import importlib.util
 
 # -----------------------
-# stop_event ve MongoDB koleksiyonları burada tanımlanacak
 stop_event = asyncio.Event()
 
-# CONFIG
 CONFIG_PATH = "/home/debian/dfbot/config.env"
 
 def read_database_from_config():
@@ -74,33 +72,38 @@ async def platform_duzelt(client: Client, message):
     last_update = 0
 
     for col, name in collections:
-        ids_cursor = col.find({}, {"_id": 1, "telegram": 1, "genres": 1})
-        ids = [d["_id"] for d in ids_cursor]
-        idx = 0
-
-        while idx < len(ids):
+        # Tüm belgeleri çek
+        cursor = col.find({}, {"_id": 1, "telegram": 1, "seasons": 1, "genres": 1})
+        for doc in cursor:
             if stop_event.is_set():
                 break
 
-            doc_id = ids[idx]
-            doc = col.find_one({"_id": doc_id})
-            telegram_list = doc.get("telegram", [])
             genres = doc.get("genres", [])
             updated = False
 
-            for t in telegram_list:
+            # Movie veya doğrudan telegram listesi olan belgeler
+            for t in doc.get("telegram", []):
                 name_field = t.get("name", "")
                 for key, genre_name in platform_genre_map.items():
                     if key in name_field and genre_name not in genres:
                         genres.append(genre_name)
                         updated = True
 
+            # TV için season -> episode -> telegram
+            for season in doc.get("seasons", []):
+                for ep in season.get("episodes", []):
+                    for t in ep.get("telegram", []):
+                        name_field = t.get("name", "")
+                        for key, genre_name in platform_genre_map.items():
+                            if key in name_field and genre_name not in genres:
+                                genres.append(genre_name)
+                                updated = True
+
             if updated:
-                col.update_one({"_id": doc_id}, {"$set": {"genres": genres}})
+                col.update_one({"_id": doc["_id"]}, {"$set": {"genres": genres}})
                 total_fixed += 1
 
-            idx += 1
-
+            # İlerleme mesajını her 5 saniyede bir güncelle
             if time.time() - last_update > 5:
                 try:
                     await start_msg.edit_text(
@@ -119,3 +122,17 @@ async def platform_duzelt(client: Client, message):
         )
     except:
         pass
+
+# Callback: iptal butonu
+@Client.on_callback_query()
+async def handle_stop_callback(client, query):
+    if query.data == "stop":
+        stop_event.set()
+        try:
+            await query.message.edit_text("⛔ İşlem iptal edildi!")
+        except:
+            pass
+        try:
+            await query.answer("Durdurma talimatı alındı.")
+        except:
+            pass
