@@ -230,7 +230,7 @@ async def turkce_icerik(client: Client, message: Message):
     stop_event.clear()
 
     start_msg = await message.reply_text(
-        "🇹🇷 Film ve dizi açıklamaları Türkçeye çevriliyor…\nİlerleme tek mesajda gösterilecektir.",
+        "🇹🇷 Türkçe çeviri hazırlanıyor.\nİlerleme tek mesajda gösterilecektir.",
         parse_mode=enums.ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
     )
@@ -254,7 +254,7 @@ async def turkce_icerik(client: Client, message: Message):
     eta_str = f"{int(hours)}s{int(minutes)}d{int(seconds)}s"
 
     summary = (
-        "🎉 *Film & Dizi Türkçeleştirme Sonuçları*\n\n"
+        "🎉 Türkçe Çeviri Sonuçları\n\n"
         f"📌 Filmler: {movie_done}/{movie_total}\n{progress_bar(movie_done, movie_total)}\nKalan: {movie_total - movie_done}, Hatalar: {movie_errors}\n\n"
         f"📌 Diziler: {series_done}/{series_total}\n{progress_bar(series_done, series_total)}\nKalan: {series_total - series_done}, Hatalar: {series_errors}\n\n"
         f"📊 Genel Özet\nToplam içerik : {total_all}\nBaşarılı     : {done_all - errors_all}\nHatalı       : {errors_all}\nKalan        : {remaining_all}\nToplam süre  : {eta_str}\n"
