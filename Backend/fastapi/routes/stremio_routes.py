@@ -13,7 +13,7 @@ ADDON_NAME = "Arşivim"
 ADDON_VERSION = __version__
 PAGE_SIZE = 15
 
-router = APIRouter(prefix="/stremio", tags=["Stremio Addon"])
+router = APIRouter(prefix="/str", tags=["Stremio Addon"])
 
 # Define available genres
 GENRES = [
