@@ -54,16 +54,13 @@ async def platform_duzelt(client: Client, message):
     platform_genre_map = {
         "MAX": "Max",
         "NF": "Netflix",
-        "DSNP": "Disney",
-        "Tabii": "Tabii",
-        "Amzn": "Amazon",
-        "Tod": "Tod",
-        "TV+": "TV+",
-        "HBO": "Max",
-        "Exxen": "Exxen",
-        "Blutv": "Max",
-        "HBO": "Max",
-        "HBOMAX": "Max",
+        "DSNP": "Disney+",
+        "BluRay": "BluRay",
+        "WEB-DL": "WEB-DL",
+        "WEBRip": "WEBRip",
+        "HDRip": "HDRip",
+        "HBO": "HBO",
+        "AMZN": "Amazon Prime",
     }
 
     collections = [
