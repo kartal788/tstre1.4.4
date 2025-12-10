@@ -27,6 +27,7 @@ def export_collections_to_json(url):
 
     db = client[db_name_list[0]]
 
+    # _id hariç tüm dokümanlar
     movie_data = list(db["movie"].find({}, {"_id": 0}))
     tv_data = list(db["tv"].find({}, {"_id": 0}))
 
@@ -54,10 +55,14 @@ async def download_collections(client: Client, message: Message):
             await message.reply_text("⚠️ Koleksiyonlar boş veya bulunamadı.")
             return
 
+        # Dosya yolu
         file_path = "/tmp/vt_collections.json"
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(combined_data, f, ensure_ascii=False, indent=2)
 
+        # JSON yazarken datetime ve diğer serialize edilemeyen tipleri string yap
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(combined_data, f, ensure_ascii=False, indent=2, default=str)
+
+        # Telegram'a gönder
         await client.send_document(
             chat_id=message.chat.id,
             document=file_path,
