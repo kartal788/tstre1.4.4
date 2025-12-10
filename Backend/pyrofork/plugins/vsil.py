@@ -5,18 +5,20 @@ import os
 from time import time
 
 CONFIG_PATH = "/home/debian/dfbot/config.env"
-flood_wait = 5
+flood_wait = 5  # saniye
 last_command_time = {}
 pending_deletes = {}  # user_id: { "files": [...], "arg": ..., "time": ... }
 confirmation_wait = 120  # Bekleme süresi 120 saniye
 
-# ---------------- Database ----------------
 DATABASE_URLS = os.getenv("DATABASE", "")
 db_urls = [u.strip() for u in DATABASE_URLS.split(",") if u.strip()]
 
 # ---------------- /vsil Komutu ----------------
-@Client.on_message(filters.command("vsil") & filters.private & CustomFilters.owner)
+@Client.on_message(filters.private & CustomFilters.owner & filters.command)
 async def delete_file(client: Client, message):
+    if message.command[0].lower() != "vsil":
+        return
+
     user_id = message.from_user.id
     now = time()
 
@@ -26,6 +28,7 @@ async def delete_file(client: Client, message):
         return
     last_command_time[user_id] = now
 
+    # Zaten onay bekliyorsa
     if user_id in pending_deletes:
         await message.reply_text("⚠️ Bir silme işlemi zaten onay bekliyor. Lütfen 'evet' veya 'hayır' yazın.")
         return
@@ -51,7 +54,7 @@ async def delete_file(client: Client, message):
         db = client_db[db_name_list[0]]
 
         # -------- Silinecek dosyaları listele --------
-        # (tmdb_id, imdb_id veya telegram adı/id kontrolü)
+        # Burada önce tmdb_id, imdb_id veya name/id kontrolü
         if arg.isdigit():
             tmdb_id = int(arg)
             movie_docs = list(db["movie"].find({"tmdb_id": tmdb_id}))
@@ -61,8 +64,8 @@ async def delete_file(client: Client, message):
             tv_docs = list(db["tv"].find({"tmdb_id": tmdb_id}))
             for doc in tv_docs:
                 for season in doc.get("seasons", []):
-                    for episode in season.get("episodes", []):
-                        deleted_files += [t.get("name") for t in episode.get("telegram", [])]
+                    for ep in season.get("episodes", []):
+                        deleted_files += [t.get("name") for t in ep.get("telegram", [])]
 
         elif arg.lower().startswith("tt"):
             imdb_id = arg
@@ -73,8 +76,8 @@ async def delete_file(client: Client, message):
             tv_docs = list(db["tv"].find({"imdb_id": imdb_id}))
             for doc in tv_docs:
                 for season in doc.get("seasons", []):
-                    for episode in season.get("episodes", []):
-                        deleted_files += [t.get("name") for t in episode.get("telegram", [])]
+                    for ep in season.get("episodes", []):
+                        deleted_files += [t.get("name") for t in ep.get("telegram", [])]
 
         else:
             target = arg
@@ -87,8 +90,8 @@ async def delete_file(client: Client, message):
             tv_docs = db["tv"].find({})
             for doc in tv_docs:
                 for season in doc.get("seasons", []):
-                    for episode in season.get("episodes", []):
-                        telegram_list = episode.get("telegram", [])
+                    for ep in season.get("episodes", []):
+                        telegram_list = ep.get("telegram", [])
                         match = [t for t in telegram_list if t.get("id") == target or t.get("name") == target]
                         deleted_files += [t.get("name") for t in match]
 
@@ -103,6 +106,7 @@ async def delete_file(client: Client, message):
             "time": now
         }
 
+        # 10'dan fazla dosya varsa txt içine yaz
         if len(deleted_files) > 10:
             file_path = f"/tmp/silinen_dosyalar_{int(time())}.txt"
             with open(file_path, "w", encoding="utf-8") as f:
@@ -112,8 +116,10 @@ async def delete_file(client: Client, message):
         else:
             text = "\n".join(deleted_files)
             await message.reply_text(
-                f"⚠️ Aşağıdaki {len(deleted_files)} dosya silinecek:\n\n{text}\n\n"
-                f"Silmek için **evet** yazın.\nİptal için **hayır** yazın.\n"
+                f"⚠️ Aşağıdaki {len(deleted_files)} dosya silinecek:\n\n"
+                f"{text}\n\n"
+                f"Silmek için **evet** yazın.\n"
+                f"İptal için **hayır** yazın.\n"
                 f"⏳ {confirmation_wait} saniye içinde cevap vermezseniz işlem iptal edilir.",
                 quote=True
             )
@@ -122,14 +128,19 @@ async def delete_file(client: Client, message):
         await message.reply_text(f"⚠️ Hata: {e}", quote=True)
         print("vsil hata:", e)
 
-# ---------------- Onay Mesajları (sadece komut olmayan mesajları yakala) ----------------
-@Client.on_message(filters.private & CustomFilters.owner & ~filters.command)
-async def confirm_delete(client: Client, message):
+
+# --- Onay Mesajlarını Dinleme ---
+@Client.on_message(filters.private & CustomFilters.owner)
+async def confirm_delete(client, message):
+    # Komut değil, sadece text mesajları işle
+    if message.text and message.text.startswith("/"):
+        return
+
     user_id = message.from_user.id
     now = time()
 
     if user_id not in pending_deletes:
-        return  # sadece onay bekleyen kullanıcılar
+        return
 
     data = pending_deletes[user_id]
 
@@ -149,7 +160,7 @@ async def confirm_delete(client: Client, message):
         await message.reply_text("⚠️ Lütfen 'evet' veya 'hayır' yazın.")
         return
 
-    # ---------------- Silme işlemi ----------------
+    # Silme işlemini uygula
     arg = data["arg"]
     deleted_files = data["files"]
 
@@ -159,21 +170,26 @@ async def confirm_delete(client: Client, message):
 
         if arg.isdigit():
             tmdb_id = int(arg)
-            for doc in db["movie"].find({"tmdb_id": tmdb_id}):
+            movie_docs = list(db["movie"].find({"tmdb_id": tmdb_id}))
+            for doc in movie_docs:
                 db["movie"].delete_one({"_id": doc["_id"]})
-            for doc in db["tv"].find({"tmdb_id": tmdb_id}):
+            tv_docs = list(db["tv"].find({"tmdb_id": tmdb_id}))
+            for doc in tv_docs:
                 db["tv"].delete_one({"_id": doc["_id"]})
 
         elif arg.lower().startswith("tt"):
             imdb_id = arg
-            for doc in db["movie"].find({"imdb_id": imdb_id}):
+            movie_docs = list(db["movie"].find({"imdb_id": imdb_id}))
+            for doc in movie_docs:
                 db["movie"].delete_one({"_id": doc["_id"]})
-            for doc in db["tv"].find({"imdb_id": imdb_id}):
+            tv_docs = list(db["tv"].find({"imdb_id": imdb_id}))
+            for doc in tv_docs:
                 db["tv"].delete_one({"_id": doc["_id"]})
 
         else:
             target = arg
-            for doc in db["movie"].find({"$or":[{"telegram.id": target},{"telegram.name": target}]}):
+            movie_docs = db["movie"].find({"$or":[{"telegram.id": target},{"telegram.name": target}]})
+            for doc in movie_docs:
                 telegram_list = doc.get("telegram", [])
                 new_telegram = [t for t in telegram_list if t.get("id") != target and t.get("name") != target]
                 if not new_telegram:
@@ -182,20 +198,21 @@ async def confirm_delete(client: Client, message):
                     doc["telegram"] = new_telegram
                     db["movie"].replace_one({"_id": doc["_id"]}, doc)
 
-            for doc in db["tv"].find({}):
+            tv_docs = db["tv"].find({})
+            for doc in tv_docs:
                 modified = False
                 seasons_to_remove = []
                 for season in doc.get("seasons", []):
                     episodes_to_remove = []
-                    for episode in season.get("episodes", []):
-                        telegram_list = episode.get("telegram", [])
+                    for ep in season.get("episodes", []):
+                        telegram_list = ep.get("telegram", [])
                         match = [t for t in telegram_list if t.get("id") == target or t.get("name") == target]
                         if match:
                             new_telegram = [t for t in telegram_list if t.get("id") != target and t.get("name") != target]
                             if new_telegram:
-                                episode["telegram"] = new_telegram
+                                ep["telegram"] = new_telegram
                             else:
-                                episodes_to_remove.append(episode)
+                                episodes_to_remove.append(ep)
                             modified = True
                     for ep in episodes_to_remove:
                         season["episodes"].remove(ep)
