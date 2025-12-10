@@ -56,7 +56,7 @@ async def download_collections(client: Client, message: Message):
             return
 
         # Dosya yolu
-        file_path = "/tmp/vt_collections.json"
+        file_path = "/tmp/dizi_ve_film_veritabanı.json"
 
         # JSON yazarken datetime ve diğer serialize edilemeyen tipleri string yap
         with open(file_path, "w", encoding="utf-8") as f:
