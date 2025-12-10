@@ -28,8 +28,10 @@ async def delete_file(client: Client, message: Message):
 
     if len(message.command) < 2:
         await message.reply_text(
-            "⚠️ Lütfen silinecek dosya adını veya telegram ID girin:\n"
-            "/vsil <telegram_id veya dosya_adı>", quote=True)
+            "⚠️ Lütfen silinecek dosya adını, TMDB/IMDb ID veya Telegram ID girin:\n"
+            "/vsil 136548920 \n"
+            "/vsil tt1025646\n"
+            "/vsil 2NcDg93E2vkVYrXnpllWOnDH576JS4LjRdYUFjg1LnSETEjsAvYCXVF", quote=True)
         return
 
     arg = message.command[1]
@@ -44,49 +46,86 @@ async def delete_file(client: Client, message: Message):
         db_name_list = client_db.list_database_names()
         db = client_db[db_name_list[0]]
 
-        # -------- TV Koleksiyonu --------
-        tv_docs = list(db["tv"].find({}))
-        for doc in tv_docs:
-            modified = False
-            seasons_to_remove = []
-            for season in doc.get("seasons", []):
-                episodes_to_remove = []
-                for episode in season.get("episodes", []):
-                    telegram_list = episode.get("telegram", [])
-                    match = [t for t in telegram_list if t.get("id") == arg]
-                    if match:
-                        deleted_files += [t.get("name") for t in match]
-                        new_telegram = [t for t in telegram_list if t.get("id") != arg]
-                        if new_telegram:
-                            episode["telegram"] = new_telegram
-                        else:
-                            episodes_to_remove.append(episode)
-                        modified = True
-                for ep in episodes_to_remove:
-                    season["episodes"].remove(ep)
-                if not season["episodes"]:
-                    seasons_to_remove.append(season)
-            for s in seasons_to_remove:
-                doc["seasons"].remove(s)
-            # Eğer dizide artık sezon yoksa, tüm diziyi sil
-            if not doc.get("seasons"):
-                db["tv"].delete_one({"_id": doc["_id"]})
-            elif modified:
-                db["tv"].replace_one({"_id": doc["_id"]}, doc)
+        # -------- TMDB ID ile silme --------
+        if arg.isdigit():
+            tmdb_id = int(arg)
+            # Movie
+            movie_docs = list(db["movie"].find({"tmdb_id": tmdb_id}))
+            for doc in movie_docs:
+                deleted_files += [t.get("name") for t in doc.get("telegram", [])]
+            db["movie"].delete_many({"tmdb_id": tmdb_id})
 
-        # -------- Movie Koleksiyonu --------
-        movie_docs = list(db["movie"].find({}))
-        for doc in movie_docs:
-            telegram_list = doc.get("telegram", [])
-            match = [t for t in telegram_list if t.get("id") == arg]
-            if match:
-                deleted_files += [t.get("name") for t in match]
-                new_telegram = [t for t in telegram_list if t.get("id") != arg]
-                if not new_telegram:
-                    db["movie"].delete_one({"_id": doc["_id"]})
-                else:
-                    doc["telegram"] = new_telegram
-                    db["movie"].replace_one({"_id": doc["_id"]}, doc)
+            # TV
+            tv_docs = list(db["tv"].find({"tmdb_id": tmdb_id}))
+            for doc in tv_docs:
+                for season in doc.get("seasons", []):
+                    for episode in season.get("episodes", []):
+                        deleted_files += [t.get("name") for t in episode.get("telegram", [])]
+            db["tv"].delete_many({"tmdb_id": tmdb_id})
+
+        # -------- IMDb ID ile silme --------
+        elif arg.lower().startswith("tt"):
+            imdb_id = arg
+            # Movie
+            movie_docs = list(db["movie"].find({"imdb_id": imdb_id}))
+            for doc in movie_docs:
+                deleted_files += [t.get("name") for t in doc.get("telegram", [])]
+            db["movie"].delete_many({"imdb_id": imdb_id})
+
+            # TV
+            tv_docs = list(db["tv"].find({"imdb_id": imdb_id}))
+            for doc in tv_docs:
+                for season in doc.get("seasons", []):
+                    for episode in season.get("episodes", []):
+                        deleted_files += [t.get("name") for t in episode.get("telegram", [])]
+            db["tv"].delete_many({"imdb_id": imdb_id})
+
+        # -------- Telegram ID ile silme --------
+        else:
+            target_id = arg
+            # TV Koleksiyonu
+            tv_docs = list(db["tv"].find({}))
+            for doc in tv_docs:
+                modified = False
+                seasons_to_remove = []
+                for season in doc.get("seasons", []):
+                    episodes_to_remove = []
+                    for episode in season.get("episodes", []):
+                        telegram_list = episode.get("telegram", [])
+                        match = [t for t in telegram_list if t.get("id") == target_id]
+                        if match:
+                            deleted_files += [t.get("name") for t in match]
+                            new_telegram = [t for t in telegram_list if t.get("id") != target_id]
+                            if new_telegram:
+                                episode["telegram"] = new_telegram
+                            else:
+                                episodes_to_remove.append(episode)
+                            modified = True
+                    for ep in episodes_to_remove:
+                        season["episodes"].remove(ep)
+                    if not season["episodes"]:
+                        seasons_to_remove.append(season)
+                for s in seasons_to_remove:
+                    doc["seasons"].remove(s)
+                # Eğer dizide artık sezon yoksa, tüm diziyi sil
+                if not doc.get("seasons"):
+                    db["tv"].delete_one({"_id": doc["_id"]})
+                elif modified:
+                    db["tv"].replace_one({"_id": doc["_id"]}, doc)
+
+            # Movie Koleksiyonu
+            movie_docs = list(db["movie"].find({}))
+            for doc in movie_docs:
+                telegram_list = doc.get("telegram", [])
+                match = [t for t in telegram_list if t.get("id") == target_id]
+                if match:
+                    deleted_files += [t.get("name") for t in match]
+                    new_telegram = [t for t in telegram_list if t.get("id") != target_id]
+                    if not new_telegram:
+                        db["movie"].delete_one({"_id": doc["_id"]})
+                    else:
+                        doc["telegram"] = new_telegram
+                        db["movie"].replace_one({"_id": doc["_id"]}, doc)
 
         if not deleted_files:
             await message.reply_text("⚠️ Hiçbir eşleşme bulunamadı.", quote=True)
