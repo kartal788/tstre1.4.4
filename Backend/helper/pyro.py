@@ -153,7 +153,7 @@ commands = [
     BotCommand("m3uindir", "📂 M3U dosyasını indir."),
     BotCommand("log", "📄 Günlük dosyasını gönder."),
     BotCommand("fixmetadata", "⚙️ Meta Veri'nin boş alanlarını düzeltin."),
-    BotCommand("vsil", "🗑️ Film veya dizileri seçerek silin.")
+    BotCommand("vsil", "🗑️ Film veya dizileri seçerek silin."),
     BotCommand("sil", "🗑️ Bütün filmleri ve dizileri sil.")
     
 ]
