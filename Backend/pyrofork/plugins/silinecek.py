@@ -1,12 +1,15 @@
-from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+import asyncio
+from pyrogram import Client, filters, enums
+from pyrogram.types import Message
 from pymongo import MongoClient
-import os, importlib.util, asyncio
-from Backend.helper.custom_filter import CustomFilters
+import os
+import importlib.util
+
+from Backend.helper.custom_filter import CustomFilters  # Owner filtresi
 
 CONFIG_PATH = "/home/debian/dfbot/config.env"
-stop_event = asyncio.Event()
 
+# ---------------- DATABASE ----------------
 def read_database_from_config():
     if not os.path.exists(CONFIG_PATH):
         return None
@@ -15,69 +18,88 @@ def read_database_from_config():
     spec.loader.exec_module(config)
     return getattr(config, "DATABASE", None)
 
-db_urls = [u.strip() for u in (read_database_from_config() or os.getenv("DATABASE", "")).split(",") if u.strip()]
+def get_db_urls():
+    db_raw = read_database_from_config() or os.getenv("DATABASE") or ""
+    return [u.strip() for u in db_raw.split(",") if u.strip()]
+
+db_urls = get_db_urls()
+if len(db_urls) < 2:
+    raise Exception("İkinci DATABASE bulunamadı!")
+
 MONGO_URL = db_urls[1]
 client_db = MongoClient(MONGO_URL)
-db = client_db[client_db.list_database_names()[0]]
+db_name = client_db.list_database_names()[0]
+db = client_db[db_name]
+
 movie_col = db["movie"]
 series_col = db["tv"]
 
-# ----------------- STOP CALLBACK -----------------
-@Client.on_callback_query(filters.regex("stop"))
-async def stop_callback(client, callback_query):
-    stop_event.set()
-    await callback_query.answer("İşlem iptal edildi!")
-
-# ----------------- SILINECEK KOMUTU -----------------
+# ---------------- /silinecek Komutu ----------------
 @Client.on_message(filters.command("silinecek") & filters.private & CustomFilters.owner)
-async def silinecek_cmd(client, message):
+async def silinecek_cmd(client: Client, message: Message):
     args = message.text.split()
-    if len(args) != 3:
-        await message.reply_text("❌ Kullanım: /silinecek tmdb 69315 veya /silinecek imdb tt0991178")
+    if len(args) < 3:
+        await message.reply_text("⚠️ Kullanım: /silinecek tmdb <id> | imdb <id> | dosya <dosya_adı>")
         return
 
-    cmd_type, value = args[1].lower(), args[2]
-    stop_event.clear()
+    sil_type = args[1].lower()
+    sil_value = args[2]
 
-    confirm_msg = await message.reply_text(
-        f"⚠️ {cmd_type.upper()} {value} ile eşleşen kayıtları silmek istediğinize emin misiniz?",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Evet", callback_data=f"confirm|{cmd_type}|{value}")],
-            [InlineKeyboardButton("❌ Hayır", callback_data="stop")]
-        ])
-    )
+    if sil_type not in ["tmdb", "imdb", "dosya"]:
+        await message.reply_text("⚠️ Geçersiz tür. tmdb, imdb veya dosya kullanın.")
+        return
 
-# ----------------- ONAY CALLBACK -----------------
-@Client.on_callback_query(filters.regex(r"confirm\|"))
-async def confirm_delete(client, callback_query):
-    _, cmd_type, value = callback_query.data.split("|")
-    collections = [movie_col, series_col]
+    # ---------------- Hangi kayıt silinecek, kullanıcıya sor ----------------
+    if sil_type == "tmdb":
+        text = f"❗ TMDB ID `{sil_value}` olan {'film' if movie_col.count_documents({'tmdb_id': int(sil_value)}) else 'dizi'} kaydı silinsin mi? 60 sn içinde 'Evet' veya 'Hayır' yazın."
+    elif sil_type == "imdb":
+        text = f"❗ IMDB ID `{sil_value}` olan {'film' if movie_col.count_documents({'imdb_id': sil_value}) else 'dizi'} kaydı silinsin mi? 60 sn içinde 'Evet' veya 'Hayır' yazın."
+    else:
+        text = f"❗ Dosya adı `{sil_value}` olan bölüm silinsin mi? 60 sn içinde 'Evet' veya 'Hayır' yazın."
+
+    prompt_msg = await message.reply_text(text, parse_mode=enums.ParseMode.MARKDOWN)
+
+    # ---------------- Kullanıcı yanıtını bekle ----------------
+    try:
+        reply: Message = await client.listen(message.chat.id, timeout=60)
+    except asyncio.TimeoutError:
+        await prompt_msg.edit_text("⏰ 60 saniye geçti, işlem iptal edildi!")
+        return
+
+    cevap = reply.text.lower()
+    if cevap != "evet":
+        await prompt_msg.edit_text("❌ İşlem iptal edildi!")
+        return
+
+    # ---------------- Silme işlemi ----------------
     deleted_count = 0
 
-    for col in collections:
-        if cmd_type == "tmdb":
-            try:
-                tmdb_id = int(value)
-                result = col.delete_many({"tmdb_id": tmdb_id})
-                deleted_count += result.deleted_count
-            except ValueError:
-                await callback_query.message.edit_text("❌ Geçersiz tmdb_id!")
-                return
-        elif cmd_type == "imdb":
-            result = col.delete_many({"imdb_id": value})
-            deleted_count += result.deleted_count
+    try:
+        if sil_type == "tmdb":
+            # Film kontrolü
+            deleted_count = movie_col.delete_many({"tmdb_id": int(sil_value)}).deleted_count
+            # Dizi kontrolü (tüm bölümler)
+            deleted_count += series_col.update_many({"tmdb_id": int(sil_value)}, {"$set": {"seasons": []}}).modified_count
 
-        # Telegram alt öğelerini sil
-        result = col.update_many(
-            {},
-            {"$pull": {"telegram": {"name": {"$regex": value, "$options": "i"}}}}
-        )
-        deleted_count += result.modified_count
+        elif sil_type == "imdb":
+            deleted_count = movie_col.delete_many({"imdb_id": sil_value}).deleted_count
+            deleted_count += series_col.update_many({"imdb_id": sil_value}, {"$set": {"seasons": []}}).modified_count
 
-        result = col.update_many(
-            {},
-            {"$pull": {"seasons.$[].episodes.$[].telegram": {"name": {"$regex": value, "$options": "i"}}}}
-        )
-        deleted_count += result.modified_count
+        else:  # dosya
+            # Sadece o bölümü sil
+            series_docs = series_col.find({"seasons.episodes.file_name": sil_value})
+            for doc in series_docs:
+                seasons = doc.get("seasons", [])
+                modified = False
+                for season in seasons:
+                    eps = season.get("episodes", [])
+                    season["episodes"] = [ep for ep in eps if ep.get("file_name") != sil_value]
+                    if len(season["episodes"]) != len(eps):
+                        modified = True
+                if modified:
+                    series_col.update_one({"_id": doc["_id"]}, {"$set": {"seasons": seasons}})
+                    deleted_count += 1
 
-    await callback_query.message.edit_text(f"✅ Silme işlemi tamamlandı. Toplam silinen/temizlenen kayıt: {deleted_count}")
+        await prompt_msg.edit_text(f"✅ Silme işlemi tamamlandı. Toplam silinen kayıt/bölüm: {deleted_count}")
+    except Exception as e:
+        await prompt_msg.edit_text(f"⚠️ Silme sırasında hata: {e}")
