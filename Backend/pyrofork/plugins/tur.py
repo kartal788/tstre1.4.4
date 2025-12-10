@@ -71,7 +71,7 @@ async def tur_ve_platform_duzelt(client: Client, message):
     }
 
     platform_genre_map = {
-        "MAX": "Max", "Hbomax": "Max", "NF": "Netflix", "DSNP": "Disney",
+        "MAX": "Max", "Hbomax": "Max", "TABİİ": "Tabii", "NF": "Netflix", "DSNP": "Disney",
         "Tod": "Tod", "Blutv": "Max", "Tv+": "Tv+", "Exxen": "Exxen",
         "Gain": "Gain", "HBO": "Max", "Tabii": "Tabii", "AMZN": "Amazon",
     }
