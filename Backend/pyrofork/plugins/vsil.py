@@ -125,7 +125,7 @@ async def delete_file(client: Client, message: Message):
             return
 
         # Silinen dosyaları gönder
-        if len(deleted_files) > 20 or sum(len(f) for f in deleted_files) > 4000:
+        if len(deleted_files) > 25 or sum(len(f) for f in deleted_files) > 4000:
             file_path = f"/tmp/silinen_dosyalar_{int(time())}.txt"
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(deleted_files))
