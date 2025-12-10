@@ -21,7 +21,6 @@ async def delete_file(client: Client, message: Message):
     user_id = message.from_user.id
     now = time()
 
-    # Flood kontrolü
     if user_id in last_command_time and now - last_command_time[user_id] < flood_wait:
         await message.reply_text(f"⚠️ Lütfen {flood_wait} saniye bekleyin.", quote=True)
         return
@@ -29,10 +28,7 @@ async def delete_file(client: Client, message: Message):
 
     if len(message.command) < 2:
         await message.reply_text(
-            "⚠️ Lütfen silinecek dosya adını, ID veya telegram ID girin:\n"
-            "/vsil <isim>\n"
-            "/vsil tmdb <id>\n"
-            "/vsil tt<imdb_id>\n"
+            "⚠️ Lütfen silinecek dosya adını veya telegram ID girin:\n"
             "/vsil <telegram_id>", quote=True)
         return
 
@@ -53,12 +49,10 @@ async def delete_file(client: Client, message: Message):
         movie_docs = movie_col.find({"telegram.id": telegram_id_arg})
         for doc in movie_docs:
             telegram_list = doc.get("telegram", [])
-            # Silinecek dosya var mı kontrol
             new_telegram = [t for t in telegram_list if t.get("id") != telegram_id_arg]
             deleted_files += [t.get("name") for t in telegram_list if t.get("id") == telegram_id_arg]
 
             if not new_telegram:
-                # Artık telegram dosyası yoksa tüm filmi sil
                 movie_col.delete_one({"_id": doc["_id"]})
             else:
                 doc["telegram"] = new_telegram
@@ -69,14 +63,28 @@ async def delete_file(client: Client, message: Message):
         tv_docs = tv_col.find({})
         for doc in tv_docs:
             modified = False
+            seasons_to_remove = []
             for season in doc.get("seasons", []):
+                episodes_to_remove = []
                 for episode in season.get("episodes", []):
                     telegram_list = episode.get("telegram", [])
-                    new_telegram = [t for t in telegram_list if t.get("id") != telegram_id_arg]
-                    if len(new_telegram) != len(telegram_list):
+                    if any(t.get("id") == telegram_id_arg for t in telegram_list):
                         deleted_files += [t.get("name") for t in telegram_list if t.get("id") == telegram_id_arg]
-                        episode["telegram"] = new_telegram
+                        new_telegram = [t for t in telegram_list if t.get("id") != telegram_id_arg]
+                        if new_telegram:
+                            episode["telegram"] = new_telegram
+                        else:
+                            # Bölümde başka telegram yoksa, bölüm tamamen silinir
+                            episodes_to_remove.append(episode)
                         modified = True
+                # Bölümleri sil
+                for ep in episodes_to_remove:
+                    season["episodes"].remove(ep)
+                # Eğer sezonun tüm bölümleri silindiyse sezonu de kaldırabiliriz (opsiyonel)
+                if not season["episodes"]:
+                    seasons_to_remove.append(season)
+            for s in seasons_to_remove:
+                doc["seasons"].remove(s)
             if modified:
                 tv_col.replace_one({"_id": doc["_id"]}, doc)
 
