@@ -59,6 +59,9 @@ async def delete_file(client: Client, message: Message):
                     for episode in season.get("episodes", []):
                         deleted_files += [t.get("name") for t in episode.get("telegram", [])]
 
+            db["movie"].delete_many({"tmdb_id": tmdb_id})
+            db["tv"].delete_many({"tmdb_id": tmdb_id})
+
         elif arg.lower().startswith("tt"):
             imdb_id = arg
             movie_docs = list(db["movie"].find({"imdb_id": imdb_id}))
@@ -71,34 +74,6 @@ async def delete_file(client: Client, message: Message):
                     for episode in season.get("episodes", []):
                         deleted_files += [t.get("name") for t in episode.get("telegram", [])]
 
-        else:
-            target = arg
-            movie_docs = db["movie"].find({"$or":[{"telegram.id": target},{"telegram.name": target}]})
-            for doc in movie_docs:
-                telegram_list = doc.get("telegram", [])
-                match = [t for t in telegram_list if t.get("id") == target or t.get("name") == target]
-                deleted_files += [t.get("name") for t in match]
-
-            tv_docs = db["tv"].find({})
-            for doc in tv_docs:
-                for season in doc.get("seasons", []):
-                    for episode in season.get("episodes", []):
-                        telegram_list = episode.get("telegram", [])
-                        match = [t for t in telegram_list if t.get("id") == target or t.get("name") == target]
-                        deleted_files += [t.get("name") for t in match]
-
-        if not deleted_files:
-            await message.reply_text("⚠️ Hiçbir eşleşme bulunamadı.", quote=True)
-            return
-
-        # -------- Dosyaları direkt sil --------
-        if arg.isdigit():
-            tmdb_id = int(arg)
-            db["movie"].delete_many({"tmdb_id": tmdb_id})
-            db["tv"].delete_many({"tmdb_id": tmdb_id})
-
-        elif arg.lower().startswith("tt"):
-            imdb_id = arg
             db["movie"].delete_many({"imdb_id": imdb_id})
             db["tv"].delete_many({"imdb_id": imdb_id})
 
@@ -107,6 +82,9 @@ async def delete_file(client: Client, message: Message):
             movie_docs = db["movie"].find({"$or":[{"telegram.id": target},{"telegram.name": target}]})
             for doc in movie_docs:
                 telegram_list = doc.get("telegram", [])
+                match = [t for t in telegram_list if t.get("id") == target or t.get("name") == target]
+                deleted_files += [t.get("name") for t in match]
+
                 new_telegram = [t for t in telegram_list if t.get("id") != target and t.get("name") != target]
                 if not new_telegram:
                     db["movie"].delete_one({"_id": doc["_id"]})
@@ -124,6 +102,7 @@ async def delete_file(client: Client, message: Message):
                         telegram_list = episode.get("telegram", [])
                         match = [t for t in telegram_list if t.get("id") == target or t.get("name") == target]
                         if match:
+                            deleted_files += [t.get("name") for t in match]
                             new_telegram = [t for t in telegram_list if t.get("id") != target and t.get("name") != target]
                             if new_telegram:
                                 episode["telegram"] = new_telegram
@@ -139,7 +118,19 @@ async def delete_file(client: Client, message: Message):
                 if modified:
                     db["tv"].replace_one({"_id": doc["_id"]}, doc)
 
-        await message.reply_text(f"✅ {len(deleted_files)} dosya başarıyla silindi.")
+        if not deleted_files:
+            await message.reply_text("⚠️ Hiçbir eşleşme bulunamadı.", quote=True)
+            return
+
+        # -------- Silinen dosyaları gönder --------
+        if len(deleted_files) > 10:
+            file_path = f"/tmp/silinen_dosyalar_{int(time())}.txt"
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(deleted_files))
+            await client.send_document(chat_id=message.chat.id, document=file_path,
+                                       caption=f"✅ {len(deleted_files)} dosya başarıyla silindi.")
+        else:
+            await message.reply_text("✅ Silinen dosyalar:\n" + "\n".join(deleted_files))
 
     except Exception as e:
         await message.reply_text(f"⚠️ Hata: {e}", quote=True)
