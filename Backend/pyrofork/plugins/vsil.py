@@ -10,7 +10,6 @@ CONFIG_PATH = "/home/debian/dfbot/config.env"
 flood_wait = 5
 last_command_time = {}
 
-# .env yükle
 if os.path.exists(CONFIG_PATH):
     load_dotenv(CONFIG_PATH)
 
@@ -30,11 +29,15 @@ async def delete_file(client: Client, message: Message):
 
     if len(message.command) < 2:
         await message.reply_text(
-            "⚠️ Lütfen silinecek dosya adını veya ID girin:\n"
+            "⚠️ Lütfen silinecek dosya adını, ID veya telegram ID girin:\n"
             "/vsil <isim>\n"
             "/vsil tmdb <id>\n"
-            "/vsil tt<imdb_id>", quote=True)
+            "/vsil tt<imdb_id>\n"
+            "/vsil <telegram_id>", quote=True)
         return
+
+    telegram_id_arg = message.command[1]
+    deleted_files = []
 
     try:
         if not db_urls or len(db_urls) < 2:
@@ -45,90 +48,37 @@ async def delete_file(client: Client, message: Message):
         db_name_list = client_db.list_database_names()
         db = client_db[db_name_list[0]]
 
-        deleted_files = []
-
-        args = message.command[1:]
-        tmdb_id = None
-        imdb_id = None
-        query_str = None
-
-        # ID veya kısmi eşleşme
-        if args[0].lower() == "tmdb" and len(args) > 1:
-            tmdb_id = int(args[1])
-        elif args[0].lower().startswith("tt"):
-            imdb_id = args[0]
-        else:
-            query_str = " ".join(args).lower()
-
         # -------- movie koleksiyonu --------
         movie_col = db["movie"]
-        if tmdb_id or imdb_id:
-            movie_query = {"tmdb_id": tmdb_id} if tmdb_id else {"imdb_id": imdb_id}
-            movie_docs = movie_col.find(movie_query)
-            for doc in movie_docs:
-                for t in doc.get("telegram", []):
-                    deleted_files.append(t.get("name"))
+        movie_docs = movie_col.find({"telegram.id": telegram_id_arg})
+        for doc in movie_docs:
+            telegram_list = doc.get("telegram", [])
+            # Silinecek dosya var mı kontrol
+            new_telegram = [t for t in telegram_list if t.get("id") != telegram_id_arg]
+            deleted_files += [t.get("name") for t in telegram_list if t.get("id") == telegram_id_arg]
+
+            if not new_telegram:
+                # Artık telegram dosyası yoksa tüm filmi sil
                 movie_col.delete_one({"_id": doc["_id"]})
-        elif query_str:
-            movie_docs = movie_col.find({
-                "$or": [
-                    {"title": {"$regex": query_str, "$options": "i"}},
-                    {"telegram.name": {"$regex": query_str, "$options": "i"}}
-                ]
-            })
-            for doc in movie_docs:
-                telegram_list = doc.get("telegram", [])
-                new_telegram = []
-                for t in telegram_list:
-                    if query_str in t.get("name", "").lower():
-                        deleted_files.append(t.get("name"))
-                    else:
-                        new_telegram.append(t)
-                if telegram_list != new_telegram:
-                    doc["telegram"] = new_telegram
-                    movie_col.replace_one({"_id": doc["_id"]}, doc)
+            else:
+                doc["telegram"] = new_telegram
+                movie_col.replace_one({"_id": doc["_id"]}, doc)
 
         # -------- tv koleksiyonu --------
         tv_col = db["tv"]
         tv_docs = tv_col.find({})
         for doc in tv_docs:
-            match = False
-            if tmdb_id and doc.get("tmdb_id") == tmdb_id:
-                match = True
-            elif imdb_id and doc.get("imdb_id") == imdb_id:
-                match = True
-            elif query_str and (query_str in doc.get("title", "").lower() or
-                                any(query_str in t.get("name", "").lower()
-                                    for s in doc.get("seasons", [])
-                                    for e in s.get("episodes", [])
-                                    for t in e.get("telegram", []))):
-                match = True
-
-            if match:
-                if tmdb_id or imdb_id:
-                    # Tüm dokümanı sil
-                    for season in doc.get("seasons", []):
-                        for episode in season.get("episodes", []):
-                            for t in episode.get("telegram", []):
-                                deleted_files.append(t.get("name"))
-                    tv_col.delete_one({"_id": doc["_id"]})
-                else:
-                    # Sadece telegram dosyalarını sil
-                    modified = False
-                    for season in doc.get("seasons", []):
-                        for episode in season.get("episodes", []):
-                            telegram_list = episode.get("telegram", [])
-                            new_telegram = []
-                            for t in telegram_list:
-                                if query_str in t.get("name", "").lower():
-                                    deleted_files.append(t.get("name"))
-                                else:
-                                    new_telegram.append(t)
-                            if telegram_list != new_telegram:
-                                episode["telegram"] = new_telegram
-                                modified = True
-                    if modified:
-                        tv_col.replace_one({"_id": doc["_id"]}, doc)
+            modified = False
+            for season in doc.get("seasons", []):
+                for episode in season.get("episodes", []):
+                    telegram_list = episode.get("telegram", [])
+                    new_telegram = [t for t in telegram_list if t.get("id") != telegram_id_arg]
+                    if len(new_telegram) != len(telegram_list):
+                        deleted_files += [t.get("name") for t in telegram_list if t.get("id") == telegram_id_arg]
+                        episode["telegram"] = new_telegram
+                        modified = True
+            if modified:
+                tv_col.replace_one({"_id": doc["_id"]}, doc)
 
         if not deleted_files:
             await message.reply_text("⚠️ Hiçbir eşleşme bulunamadı.", quote=True)
