@@ -10,6 +10,7 @@ CONFIG_PATH = "/home/debian/dfbot/config.env"
 flood_wait = 5
 last_command_time = {}
 pending_deletes = {}  # user_id: { "files": [...], "arg": ..., "time": ... }
+confirmation_wait = 120  # Bekleme süresi 120 saniye
 
 if os.path.exists(CONFIG_PATH):
     load_dotenv(CONFIG_PATH)
@@ -27,7 +28,6 @@ async def delete_file(client: Client, message: Message):
         return
     last_command_time[user_id] = now
 
-    # Eğer halihazırda onay bekleyen işlem varsa
     if user_id in pending_deletes:
         await message.reply_text("⚠️ Bir silme işlemi zaten onay bekliyor. Lütfen 'evet' veya 'hayır' yazın.")
         return
@@ -52,7 +52,7 @@ async def delete_file(client: Client, message: Message):
         db_name_list = client_db.list_database_names()
         db = client_db[db_name_list[0]]
 
-        # -------- tmdb ID ile silinecekleri listele --------
+        # -------- Silinecek dosyaları listele --------
         if arg.isdigit():
             tmdb_id = int(arg)
             movie_docs = list(db["movie"].find({"tmdb_id": tmdb_id}))
@@ -65,7 +65,6 @@ async def delete_file(client: Client, message: Message):
                     for episode in season.get("episodes", []):
                         deleted_files += [t.get("name") for t in episode.get("telegram", [])]
 
-        # -------- imdb ID ile silinecekleri listele --------
         elif arg.lower().startswith("tt"):
             imdb_id = arg
             movie_docs = list(db["movie"].find({"imdb_id": imdb_id}))
@@ -78,7 +77,6 @@ async def delete_file(client: Client, message: Message):
                     for episode in season.get("episodes", []):
                         deleted_files += [t.get("name") for t in episode.get("telegram", [])]
 
-        # -------- telegram_id veya dosya adı ile silinecekleri listele --------
         else:
             target = arg
             movie_docs = db["movie"].find({"$or":[{"telegram.id": target},{"telegram.name": target}]})
@@ -106,20 +104,21 @@ async def delete_file(client: Client, message: Message):
             "time": now
         }
 
-        if len(deleted_files) > 20 or sum(len(f) for f in deleted_files) > 4000:
+        # 10'dan fazla dosya varsa txt içine yaz
+        if len(deleted_files) > 10:
             file_path = f"/tmp/silinen_dosyalar_{int(time())}.txt"
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(deleted_files))
             await client.send_document(chat_id=message.chat.id, document=file_path,
-                                       caption="⚠️ Silinecek dosyalar listesi\nSilmek için 'evet', iptal için 'hayır' yazın. ⏳ 60 sn.")
+                                       caption=f"⚠️ {len(deleted_files)} dosya silinecek.\nSilmek için 'evet', iptal için 'hayır' yazın. ⏳ {confirmation_wait} sn.")
         else:
             text = "\n".join(deleted_files)
             await message.reply_text(
                 f"⚠️ Aşağıdaki {len(deleted_files)} dosya silinecek:\n\n"
                 f"{text}\n\n"
-                "Silmek için **evet** yazın.\n"
-                "İptal için **hayır** yazın.\n"
-                "⏳ 60 saniye içinde cevap vermezseniz işlem iptal edilir.",
+                f"Silmek için **evet** yazın.\n"
+                f"İptal için **hayır** yazın.\n"
+                f"⏳ {confirmation_wait} saniye içinde cevap vermezseniz işlem iptal edilir.",
                 quote=True
             )
 
@@ -135,13 +134,13 @@ async def confirm_delete(client: Client, message: Message):
     now = time()
 
     if user_id not in pending_deletes:
-        return  # bekleyen işlem yok
+        return
 
     data = pending_deletes[user_id]
 
-    if now - data["time"] > 60:
+    if now - data["time"] > confirmation_wait:
         del pending_deletes[user_id]
-        await message.reply_text("⏳ Süre doldu, silme işlemi iptal edildi.")
+        await message.reply_text(f"⏳ Süre doldu, silme işlemi iptal edildi.")
         return
 
     text = message.text.lower()
@@ -155,7 +154,6 @@ async def confirm_delete(client: Client, message: Message):
         await message.reply_text("⚠️ Lütfen 'evet' veya 'hayır' yazın.")
         return
 
-    # EVET → Silme başlasın
     arg = data["arg"]
     deleted_files = data["files"]
 
@@ -163,29 +161,24 @@ async def confirm_delete(client: Client, message: Message):
         client_db = MongoClient(db_urls[1])
         db = client_db[client_db.list_database_names()[0]]
 
-        # -------- tmdb ID ile tam doküman silme --------
         if arg.isdigit():
             tmdb_id = int(arg)
             movie_docs = list(db["movie"].find({"tmdb_id": tmdb_id}))
             for doc in movie_docs:
                 db["movie"].delete_one({"_id": doc["_id"]})
-
             tv_docs = list(db["tv"].find({"tmdb_id": tmdb_id}))
             for doc in tv_docs:
                 db["tv"].delete_one({"_id": doc["_id"]})
 
-        # -------- imdb ID ile tam doküman silme --------
         elif arg.lower().startswith("tt"):
             imdb_id = arg
             movie_docs = list(db["movie"].find({"imdb_id": imdb_id}))
             for doc in movie_docs:
                 db["movie"].delete_one({"_id": doc["_id"]})
-
             tv_docs = list(db["tv"].find({"imdb_id": imdb_id}))
             for doc in tv_docs:
                 db["tv"].delete_one({"_id": doc["_id"]})
 
-        # -------- telegram_id veya dosya adı ile silme --------
         else:
             target = arg
             movie_docs = db["movie"].find({"$or":[{"telegram.id": target},{"telegram.name": target}]})
