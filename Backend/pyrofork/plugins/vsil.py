@@ -30,7 +30,7 @@ async def delete_file(client: Client, message: Message):
         await message.reply_text(
             "⚠️ Lütfen silinecek dosya adını, telegram ID, tmdb veya imdb ID girin:\n"
             "/vsil <telegram_id veya dosya_adı>\n"
-            "/vsil tmdb <id>\n"
+            "/vsil <tmdb_id>\n"
             "/vsil tt<imdb_id>", quote=True)
         return
 
@@ -46,9 +46,9 @@ async def delete_file(client: Client, message: Message):
         db_name_list = client_db.list_database_names()
         db = client_db[db_name_list[0]]
 
-        # -------- tmdb veya imdb ID ile tam doküman silme --------
-        if arg.lower() == "tmdb" and len(message.command) > 2:
-            tmdb_id = int(message.command[2])
+        # -------- tmdb ID ile tam doküman silme --------
+        if arg.isdigit():
+            tmdb_id = int(arg)
             # Movie
             movie_docs = list(db["movie"].find({"tmdb_id": tmdb_id}))
             for doc in movie_docs:
@@ -62,6 +62,7 @@ async def delete_file(client: Client, message: Message):
                         deleted_files += [t.get("name") for t in episode.get("telegram", [])]
                 db["tv"].delete_one({"_id": doc["_id"]})
 
+        # -------- imdb ID ile tam doküman silme --------
         elif arg.lower().startswith("tt"):
             imdb_id = arg
             # Movie
@@ -77,8 +78,8 @@ async def delete_file(client: Client, message: Message):
                         deleted_files += [t.get("name") for t in episode.get("telegram", [])]
                 db["tv"].delete_one({"_id": doc["_id"]})
 
+        # -------- telegram_id veya dosya adı ile silme --------
         else:
-            # -------- telegram_id veya dosya adı ile silme --------
             target = arg
             # Movie
             movie_docs = db["movie"].find({"$or":[{"telegram.id": target},{"telegram.name": target}]})
@@ -91,6 +92,7 @@ async def delete_file(client: Client, message: Message):
                 else:
                     doc["telegram"] = new_telegram
                     db["movie"].replace_one({"_id": doc["_id"]}, doc)
+
             # TV
             tv_docs = db["tv"].find({})
             for doc in tv_docs:
