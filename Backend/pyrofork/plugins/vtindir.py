@@ -1,4 +1,8 @@
+import asyncio
+import time
 from pyrogram import Client, filters
+# Hata yönetimi için FloodWait'i içe aktarıyoruz
+from pyrogram.errors import FloodWait 
 from pyrogram.types import Message
 from Backend.helper.custom_filter import CustomFilters
 from pymongo import MongoClient
@@ -7,9 +11,8 @@ import importlib.util
 import json
 import datetime
 import tempfile
-import time
 
-# ------------ DATABASE Bağlantısı (Değişmedi) ------------
+# ------------ DATABASE Bağlantısı ------------
 CONFIG_PATH = "/home/debian/dfbot/config.env"
 
 def read_database_from_config():
@@ -32,13 +35,10 @@ if len(db_urls) < 2:
 
 MONGO_URL = db_urls[1]
 client_db = MongoClient(MONGO_URL)
-# Veritabanı adı, list_database_names() ile alınırken, 
-# listenin boş olmaması veya doğru veritabanı adını içerdiğinden emin olun.
-# Örnek: `db_name = "bot_database_name"` şeklinde doğrudan tanımlamak daha güvenli olabilir.
-db_name = client_db.list_database_names()[0] 
+db_name = client_db.list_database_names()[0]
 db = client_db[db_name]
 
-# ------------ GLOBAL FLAG İPTAL (Değişmedi) ------------
+# ------------ GLOBAL FLAG İPTAL ------------
 cancel_process = False
 
 # ------------ /vtindir Komutu (Düzeltildi) ------------
@@ -56,17 +56,16 @@ async def download_database(client, message: Message):
     tmp_file_path = tmp_file.name
     tmp_file.close()
 
-    # 💡 THROTTLING AYARI
-    MIN_UPDATE_INTERVAL = 5 # Minimum 5 saniyede bir mesajı güncelle
+    # 💡 THROTTLING AYARI: Minimum 5 saniyede bir mesajı güncelle
+    MIN_UPDATE_INTERVAL = 5 
 
     try:
         collections = db.list_collection_names()
-        total_docs = sum(db[col].count_documents({}) for col in collections)
+        # count_documents yerine estimated_document_count kullanabilirsiniz (daha hızlı, ama tahmini sonuç verir)
+        total_docs = sum(db[col].count_documents({}) for col in collections) 
         processed_docs = 0
         start_time = time.time()
-        
-        # 🔑 Düzeltme 1: Son güncelleme zamanını tutan değişken
-        last_update_time = time.time() 
+        last_update_time = time.time() # Son güncelleme zamanı
 
         with open(tmp_file_path, "w", encoding="utf-8") as f:
             f.write("{")
@@ -95,7 +94,7 @@ async def download_database(client, message: Message):
                     f.write(json.dumps(doc, default=str, ensure_ascii=False)) 
                     processed_docs += 1
 
-                    # 🔑 Düzeltme 2: Zaman tabanlı kısıtlama (Throttling) koşulu
+                    # 🔑 Düzeltme: Zaman tabanlı kısıtlama (Throttling) koşulu
                     current_time = time.time()
                     
                     # Sadece son belgede veya 50 belge ve minimum 5 saniye geçmişse güncelle
@@ -103,14 +102,26 @@ async def download_database(client, message: Message):
                         elapsed = current_time - start_time
                         remaining = (elapsed / processed_docs) * (total_docs - processed_docs) if processed_docs > 0 else 0
                         
-                        await start_msg.edit_text(
-                            f"💾 Database hazırlanıyor...\n"
-                            f"İlerleme: **{processed_docs} / {total_docs}** belgeler\n"
-                            f"Tahmini kalan süre: {int(remaining)} saniye"
-                        )
+                        try:
+                            await start_msg.edit_text(
+                                f"💾 Database hazırlanıyor...\n"
+                                f"İlerleme: **{processed_docs} / {total_docs}** belgeler\n"
+                                f"Tahmini kalan süre: {int(remaining)} saniye"
+                            )
+                            # Başarılı güncellemeden sonra zamanı sıfırla
+                            last_update_time = current_time 
+
+                        # 🚨 KRİTİK DÜZELTME: FloodWait hatasını yakala ve bekle
+                        except FloodWait as e:
+                            wait_time = e.value # Telegram'ın istediği bekleme süresi (saniye)
+                            print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] TELEGRAM FLOOD WAIT: {wait_time} saniye bekleniyor...")
+                            await asyncio.sleep(wait_time)
+                            # Bekledikten sonra bir sonraki döngüde devam edecek
+                            last_update_time = time.time()
                         
-                        # Güncellemeyi yaptıktan sonra zamanı sıfırla
-                        last_update_time = current_time 
+                        except Exception as e_gen:
+                            # Mesaj silinmiş/düzenlenemiyor olabilir, devam et
+                            pass
 
                 f.write("]")
             f.write("}")
@@ -132,7 +143,7 @@ async def download_database(client, message: Message):
         if os.path.exists(tmp_file_path):
             os.remove(tmp_file_path)
 
-# ------------ /iptal Komutu (Değişmedi) ------------
+# ------------ /iptal Komutu ------------
 @Client.on_message(filters.command("iptal") & filters.private & CustomFilters.owner)
 async def cancel_database_export(client, message: Message):
     global cancel_process
