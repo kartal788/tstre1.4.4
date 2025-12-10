@@ -52,6 +52,7 @@ async def delete_file(client: Client, message: Message):
         imdb_id = None
         query_str = None
 
+        # ID veya kısmi eşleşme
         if args[0].lower() == "tmdb" and len(args) > 1:
             tmdb_id = int(args[1])
         elif args[0].lower().startswith("tt"):
@@ -61,34 +62,31 @@ async def delete_file(client: Client, message: Message):
 
         # -------- movie koleksiyonu --------
         movie_col = db["movie"]
-        movie_query = {}
-        if tmdb_id:
-            movie_query["tmdb_id"] = tmdb_id
-        elif imdb_id:
-            movie_query["imdb_id"] = imdb_id
-        elif query_str:
-            movie_query["$or"] = [
-                {"title": {"$regex": query_str, "$options": "i"}},
-                {"telegram.name": {"$regex": query_str, "$options": "i"}}
-            ]
-
-        movie_docs = movie_col.find(movie_query)
-        for doc in movie_docs:
-            telegram_list = doc.get("telegram", [])
-            if tmdb_id or imdb_id:
-                for t in telegram_list:
+        if tmdb_id or imdb_id:
+            movie_query = {"tmdb_id": tmdb_id} if tmdb_id else {"imdb_id": imdb_id}
+            movie_docs = movie_col.find(movie_query)
+            for doc in movie_docs:
+                for t in doc.get("telegram", []):
                     deleted_files.append(t.get("name"))
-                doc["telegram"] = []
-            elif query_str:
+                movie_col.delete_one({"_id": doc["_id"]})
+        elif query_str:
+            movie_docs = movie_col.find({
+                "$or": [
+                    {"title": {"$regex": query_str, "$options": "i"}},
+                    {"telegram.name": {"$regex": query_str, "$options": "i"}}
+                ]
+            })
+            for doc in movie_docs:
+                telegram_list = doc.get("telegram", [])
                 new_telegram = []
                 for t in telegram_list:
                     if query_str in t.get("name", "").lower():
                         deleted_files.append(t.get("name"))
                     else:
                         new_telegram.append(t)
-                doc["telegram"] = new_telegram
-            if telegram_list != doc.get("telegram"):
-                movie_col.replace_one({"_id": doc["_id"]}, doc)
+                if telegram_list != new_telegram:
+                    doc["telegram"] = new_telegram
+                    movie_col.replace_one({"_id": doc["_id"]}, doc)
 
         # -------- tv koleksiyonu --------
         tv_col = db["tv"]
@@ -107,26 +105,30 @@ async def delete_file(client: Client, message: Message):
                 match = True
 
             if match:
-                modified = False
-                for season in doc.get("seasons", []):
-                    for episode in season.get("episodes", []):
-                        telegram_list = episode.get("telegram", [])
-                        if tmdb_id or imdb_id:
-                            for t in telegram_list:
+                if tmdb_id or imdb_id:
+                    # Tüm dokümanı sil
+                    for season in doc.get("seasons", []):
+                        for episode in season.get("episodes", []):
+                            for t in episode.get("telegram", []):
                                 deleted_files.append(t.get("name"))
-                            episode["telegram"] = []
-                        else:
+                    tv_col.delete_one({"_id": doc["_id"]})
+                else:
+                    # Sadece telegram dosyalarını sil
+                    modified = False
+                    for season in doc.get("seasons", []):
+                        for episode in season.get("episodes", []):
+                            telegram_list = episode.get("telegram", [])
                             new_telegram = []
                             for t in telegram_list:
                                 if query_str in t.get("name", "").lower():
                                     deleted_files.append(t.get("name"))
                                 else:
                                     new_telegram.append(t)
-                            episode["telegram"] = new_telegram
-                        if telegram_list != episode["telegram"]:
-                            modified = True
-                if modified:
-                    tv_col.replace_one({"_id": doc["_id"]}, doc)
+                            if telegram_list != new_telegram:
+                                episode["telegram"] = new_telegram
+                                modified = True
+                    if modified:
+                        tv_col.replace_one({"_id": doc["_id"]}, doc)
 
         if not deleted_files:
             await message.reply_text("⚠️ Hiçbir eşleşme bulunamadı.", quote=True)
@@ -134,7 +136,6 @@ async def delete_file(client: Client, message: Message):
 
         # Silinen dosyaları gönder
         if len(deleted_files) > 50 or sum(len(f) for f in deleted_files) > 4000:
-            # TXT dosyası olarak gönder
             file_path = f"/tmp/deleted_files_{int(time())}.txt"
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(deleted_files))
