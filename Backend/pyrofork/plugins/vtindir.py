@@ -9,7 +9,7 @@ import datetime
 import tempfile
 import time
 
-# ------------ DATABASE Bağlantısı ------------
+# ------------ DATABASE Bağlantısı (Değişmedi) ------------
 CONFIG_PATH = "/home/debian/dfbot/config.env"
 
 def read_database_from_config():
@@ -32,13 +32,16 @@ if len(db_urls) < 2:
 
 MONGO_URL = db_urls[1]
 client_db = MongoClient(MONGO_URL)
-db_name = client_db.list_database_names()[0]
+# Veritabanı adı, list_database_names() ile alınırken, 
+# listenin boş olmaması veya doğru veritabanı adını içerdiğinden emin olun.
+# Örnek: `db_name = "bot_database_name"` şeklinde doğrudan tanımlamak daha güvenli olabilir.
+db_name = client_db.list_database_names()[0] 
 db = client_db[db_name]
 
-# ------------ GLOBAL FLAG İPTAL ------------
+# ------------ GLOBAL FLAG İPTAL (Değişmedi) ------------
 cancel_process = False
 
-# ------------ /dbindir Komutu ------------
+# ------------ /vtindir Komutu (Düzeltildi) ------------
 @Client.on_message(filters.command("vtindir") & filters.private & CustomFilters.owner)
 async def download_database(client, message: Message):
     global cancel_process
@@ -53,11 +56,17 @@ async def download_database(client, message: Message):
     tmp_file_path = tmp_file.name
     tmp_file.close()
 
+    # 💡 THROTTLING AYARI
+    MIN_UPDATE_INTERVAL = 5 # Minimum 5 saniyede bir mesajı güncelle
+
     try:
         collections = db.list_collection_names()
         total_docs = sum(db[col].count_documents({}) for col in collections)
         processed_docs = 0
         start_time = time.time()
+        
+        # 🔑 Düzeltme 1: Son güncelleme zamanını tutan değişken
+        last_update_time = time.time() 
 
         with open(tmp_file_path, "w", encoding="utf-8") as f:
             f.write("{")
@@ -82,18 +91,26 @@ async def download_database(client, message: Message):
                     else:
                         first_doc = False
 
-                    f.write(json.dumps(doc, default=str, ensure_ascii=False))
+                    # MongoDB'deki ObjectId ve diğer özel tipleri JSON uyumlu hale getirir
+                    f.write(json.dumps(doc, default=str, ensure_ascii=False)) 
                     processed_docs += 1
 
-                    # Tahmini süreyi her 50 belge de bir güncelle
-                    if processed_docs % 50 == 0 or processed_docs == total_docs:
-                        elapsed = time.time() - start_time
-                        remaining = (elapsed / processed_docs) * (total_docs - processed_docs) if processed_docs else 0
+                    # 🔑 Düzeltme 2: Zaman tabanlı kısıtlama (Throttling) koşulu
+                    current_time = time.time()
+                    
+                    # Sadece son belgede veya 50 belge ve minimum 5 saniye geçmişse güncelle
+                    if processed_docs == total_docs or (processed_docs % 50 == 0 and current_time - last_update_time >= MIN_UPDATE_INTERVAL):
+                        elapsed = current_time - start_time
+                        remaining = (elapsed / processed_docs) * (total_docs - processed_docs) if processed_docs > 0 else 0
+                        
                         await start_msg.edit_text(
                             f"💾 Database hazırlanıyor...\n"
-                            f"İlerleme: {processed_docs}/{total_docs} belgeler\n"
+                            f"İlerleme: **{processed_docs} / {total_docs}** belgeler\n"
                             f"Tahmini kalan süre: {int(remaining)} saniye"
                         )
+                        
+                        # Güncellemeyi yaptıktan sonra zamanı sıfırla
+                        last_update_time = current_time 
 
                 f.write("]")
             f.write("}")
@@ -103,19 +120,19 @@ async def download_database(client, message: Message):
             chat_id=message.chat.id,
             document=tmp_file_path,
             file_name=file_name,
-            caption=f"📂 Veritabanı: {db_name} ({timestamp})"
+            caption=f"📂 Veritabanı: **{db_name}** ({timestamp})"
         )
 
         await start_msg.delete()
 
     except Exception as e:
-        await start_msg.edit_text(f"❌ Database indirilemedi.\nHata: {e}")
+        await start_msg.edit_text(f"❌ Database indirilemedi.\nHata: `{e}`")
 
     finally:
         if os.path.exists(tmp_file_path):
             os.remove(tmp_file_path)
 
-# ------------ /iptal Komutu ------------
+# ------------ /iptal Komutu (Değişmedi) ------------
 @Client.on_message(filters.command("iptal") & filters.private & CustomFilters.owner)
 async def cancel_database_export(client, message: Message):
     global cancel_process
