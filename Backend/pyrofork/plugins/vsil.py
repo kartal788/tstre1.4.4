@@ -9,8 +9,6 @@ from time import time
 CONFIG_PATH = "/home/debian/dfbot/config.env"
 flood_wait = 5
 last_command_time = {}
-pending_deletes = {}  # user_id: { "files": [...], "arg": ..., "time": ... }
-confirmation_wait = 120  # Bekleme süresi 120 saniye
 
 if os.path.exists(CONFIG_PATH):
     load_dotenv(CONFIG_PATH)
@@ -27,10 +25,6 @@ async def delete_file(client: Client, message: Message):
         await message.reply_text(f"⚠️ Lütfen {flood_wait} saniye bekleyin.", quote=True)
         return
     last_command_time[user_id] = now
-
-    if user_id in pending_deletes:
-        await message.reply_text("⚠️ Bir silme işlemi zaten onay bekliyor. Lütfen 'evet' veya 'hayır' yazın.")
-        return
 
     if len(message.command) < 2:
         await message.reply_text(
@@ -97,87 +91,16 @@ async def delete_file(client: Client, message: Message):
             await message.reply_text("⚠️ Hiçbir eşleşme bulunamadı.", quote=True)
             return
 
-        # --- ONAY MEKANİZMASI ---
-        pending_deletes[user_id] = {
-            "files": deleted_files,
-            "arg": arg,
-            "time": now
-        }
-
-        # 10'dan fazla dosya varsa txt içine yaz
-        if len(deleted_files) > 10:
-            file_path = f"/tmp/silinen_dosyalar_{int(time())}.txt"
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write("\n".join(deleted_files))
-            await client.send_document(chat_id=message.chat.id, document=file_path,
-                                       caption=f"⚠️ {len(deleted_files)} dosya silinecek.\nSilmek için 'evet', iptal için 'hayır' yazın. ⏳ {confirmation_wait} sn.")
-        else:
-            text = "\n".join(deleted_files)
-            await message.reply_text(
-                f"⚠️ Aşağıdaki {len(deleted_files)} dosya silinecek:\n\n"
-                f"{text}\n\n"
-                f"Silmek için **evet** yazın.\n"
-                f"İptal için **hayır** yazın.\n"
-                f"⏳ {confirmation_wait} saniye içinde cevap vermezseniz işlem iptal edilir.",
-                quote=True
-            )
-
-    except Exception as e:
-        await message.reply_text(f"⚠️ Hata: {e}", quote=True)
-        print("vsil hata:", e)
-
-
-# --- Onay Mesajlarını Dinleme ---
-@Client.on_message(filters.private & CustomFilters.owner)
-async def confirm_delete(client: Client, message: Message):
-    user_id = message.from_user.id
-    now = time()
-
-    if user_id not in pending_deletes:
-        return
-
-    data = pending_deletes[user_id]
-
-    if now - data["time"] > confirmation_wait:
-        del pending_deletes[user_id]
-        await message.reply_text(f"⏳ Süre doldu, silme işlemi iptal edildi.")
-        return
-
-    text = message.text.lower()
-
-    if text == "hayır":
-        del pending_deletes[user_id]
-        await message.reply_text("❌ Silme işlemi iptal edildi.")
-        return
-
-    if text != "evet":
-        await message.reply_text("⚠️ Lütfen 'evet' veya 'hayır' yazın.")
-        return
-
-    arg = data["arg"]
-    deleted_files = data["files"]
-
-    try:
-        client_db = MongoClient(db_urls[1])
-        db = client_db[client_db.list_database_names()[0]]
-
+        # -------- Dosyaları direkt sil --------
         if arg.isdigit():
             tmdb_id = int(arg)
-            movie_docs = list(db["movie"].find({"tmdb_id": tmdb_id}))
-            for doc in movie_docs:
-                db["movie"].delete_one({"_id": doc["_id"]})
-            tv_docs = list(db["tv"].find({"tmdb_id": tmdb_id}))
-            for doc in tv_docs:
-                db["tv"].delete_one({"_id": doc["_id"]})
+            db["movie"].delete_many({"tmdb_id": tmdb_id})
+            db["tv"].delete_many({"tmdb_id": tmdb_id})
 
         elif arg.lower().startswith("tt"):
             imdb_id = arg
-            movie_docs = list(db["movie"].find({"imdb_id": imdb_id}))
-            for doc in movie_docs:
-                db["movie"].delete_one({"_id": doc["_id"]})
-            tv_docs = list(db["tv"].find({"imdb_id": imdb_id}))
-            for doc in tv_docs:
-                db["tv"].delete_one({"_id": doc["_id"]})
+            db["movie"].delete_many({"imdb_id": imdb_id})
+            db["tv"].delete_many({"imdb_id": imdb_id})
 
         else:
             target = arg
@@ -216,9 +139,8 @@ async def confirm_delete(client: Client, message: Message):
                 if modified:
                     db["tv"].replace_one({"_id": doc["_id"]}, doc)
 
-        del pending_deletes[user_id]
-        await message.reply_text("✅ Dosyalar başarıyla silindi.")
+        await message.reply_text(f"✅ {len(deleted_files)} dosya başarıyla silindi.")
 
     except Exception as e:
-        await message.reply_text(f"⚠️ Hata: {e}")
-        print("onay silme hata:", e)
+        await message.reply_text(f"⚠️ Hata: {e}", quote=True)
+        print("vsil hata:", e)
