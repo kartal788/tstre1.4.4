@@ -79,7 +79,7 @@ async def init_db_collections():
     """Veritabanı bağlantısını asenkron olarak başlatır ve koleksiyonları ayarlar."""
     global db, movie_col, series_col
     
-    # HATA DÜZELTME: 'db' objesi None ile karşılaştırılmalıdır.
+    # Düzeltme 1: 'db' objesi None ile karşılaştırılmalıdır.
     if not motor_client or db is not None: 
         return True
     
@@ -180,7 +180,6 @@ def get_db_stats_and_genres_sync(url):
     from pymongo import MongoClient 
     client = MongoClient(url)
     db_name_list = client.list_database_names()
-    # ... (İstatistik kodu, değişiklik yapılmadı) ...
     if not db_name_list:
         client.close()
         return 0, 0, 0.0, 0.0, {}
@@ -206,7 +205,6 @@ def get_db_stats_and_genres_sync(url):
 
 def get_system_status():
     """Sistem durumunu (CPU, RAM, Disk, Uptime) çeker."""
-    # ... (Sistem istatistikleri kodu, değişiklik yapılmadı) ...
     cpu = round(psutil.cpu_percent(interval=1), 1)
     ram = round(psutil.virtual_memory().percent, 1)
 
@@ -226,7 +224,6 @@ def export_collections_to_json_sync(url):
     from pymongo import MongoClient
     client = MongoClient(url)
     db_name_list = client.list_database_names()
-    # ... (JSON dışa aktarım kodu, değişiklik yapılmadı) ...
     if not db_name_list:
         client.close()
         return None
@@ -243,7 +240,6 @@ def export_collections_to_json_sync(url):
 # --- /m3uindir Komutu (Çalışıyor) ---
 @Client.on_message(filters.command("m3uindir") & filters.private & CustomFilters.owner)
 async def send_m3u_file(client, message: Message):
-    # ... (Komut içeriği, değişiklik yapılmadı) ...
     if not MONGO_URL or not BASE_URL:
         await message.reply_text("⚠️ BASE_URL veya İkinci Veritabanı bulunamadı!")
         return
@@ -299,7 +295,6 @@ async def send_m3u_file(client, message: Message):
 # --- /istatistik Komutu (Çalışıyor) ---
 @Client.on_message(filters.command("istatistik") & filters.private & CustomFilters.owner)
 async def send_statistics(client: Client, message: Message):
-    # ... (Komut içeriği, değişiklik yapılmadı) ...
     if not MONGO_URL:
         await message.reply_text("⚠️ İkinci veritabanı bulunamadı.")
         return
@@ -335,7 +330,6 @@ async def send_statistics(client: Client, message: Message):
 # --- /vindir Komutu (Çalışıyor) ---
 @Client.on_message(filters.command("vindir") & filters.private & CustomFilters.owner)
 async def download_collections(client: Client, message: Message):
-    # ... (Komut içeriği, değişiklik yapılmadı) ...
     user_id = message.from_user.id
     now = time.time()
 
@@ -369,7 +363,7 @@ async def download_collections(client: Client, message: Message):
     except Exception as e:
         await message.reply_text(f"⚠️ Hata: {e}")
 
-# --- /sil Komutu (Hata Düzeltildi) ---
+# --- /sil Komutu (Düzeltme 1 yapıldı) ---
 @Client.on_message(filters.command("sil") & filters.private & CustomFilters.owner)
 async def request_delete(client, message):
     if not MONGO_URL or not motor_client:
@@ -378,7 +372,6 @@ async def request_delete(client, message):
         
     user_id = message.from_user.id
     
-    # Hata Düzeltildi: init_db_collections çağrısı bu soruna neden oluyordu.
     if not await init_db_collections():
         await message.reply_text("⚠️ Veritabanı başlatılamadı.")
         return
@@ -438,10 +431,9 @@ async def handle_confirmation(client, message):
     elif text == "hayır":
         await message.reply_text("❌ Silme işlemi iptal edildi.")
 
-# --- /tur Komutu (Hata Düzeltildi) ---
+# --- /tur Komutu (Düzeltme 1 yapıldı) ---
 @Client.on_message(filters.command("tur") & filters.private & CustomFilters.owner)
 async def tur_ve_platform_duzelt(client: Client, message):
-    # Hata Düzeltildi: init_db_collections çağrısı bu soruna neden oluyordu.
     if not MONGO_URL or not await init_db_collections():
         await message.reply_text("⚠️ Veritabanı başlatılamadı veya bulunamadı.")
         return
@@ -567,15 +559,15 @@ async def tur_ve_platform_duzelt(client: Client, message):
         pass
 
 
-# --- /cevir Komutu (Hata Düzeltildi) ---
+# --- /cevir Komutu (Düzeltme 2 yapıldı) ---
 async def process_collection_parallel(collection, name, message):
     """Koleksiyonu paralel işlem havuzu kullanarak çevirir."""
-    if not collection: return 0, 0, 0, 0
+    # Düzeltme 2: Koleksiyon objesi None ile karşılaştırılmalıdır.
+    if collection is None: return 0, 0, 0, 0 
     if not GoogleTranslator: 
         await message.reply_text("⚠️ GoogleTranslator kütüphanesi yüklü değil, çeviri yapılamaz.")
         return 0, 0, 0, 0
     
-    # ... (Proses havuzu başlatma ve veri çekme mantığı) ...
     loop = asyncio.get_event_loop()
     total = await collection.count_documents({})
     done = 0
@@ -680,7 +672,6 @@ async def process_collection_parallel(collection, name, message):
 async def turkce_icerik(client: Client, message: Message):
     global stop_event
     
-    # Hata Düzeltildi: init_db_collections çağrısı bu soruna neden oluyordu.
     if not MONGO_URL or not await init_db_collections():
         await message.reply_text("⚠️ Veritabanı başlatılamadı veya bulunamadı.")
         return
@@ -723,11 +714,10 @@ async def turkce_icerik(client: Client, message: Message):
         pass
 
 
-# --- /vsil Komutu (Hata Düzeltildi) ---
+# --- /vsil Komutu (Düzeltme 1 yapıldı) ---
 async def find_files_to_delete(arg):
     deleted_files = []
     
-    # ... (find_files_to_delete mantığı, değişiklik yapılmadı) ...
     if arg.isdigit():
         tmdb_id = int(arg)
         movie_docs = [doc async for doc in movie_col.find({"tmdb_id": tmdb_id})]
@@ -797,7 +787,6 @@ async def delete_file_request(client: Client, message: Message):
 
     arg = message.command[1]
     
-    # Hata Düzeltildi: init_db_collections çağrısı bu soruna neden oluyordu.
     if not MONGO_URL or not await init_db_collections():
         await message.reply_text("⚠️ İkinci veritabanı bulunamadı veya başlatılamadı.")
         return
