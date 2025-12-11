@@ -67,7 +67,7 @@ def process_delete(db, id_type, val, imdb_fallback=None, test=False, category="a
                 db["movie"].delete_one({"_id": doc["_id"]})
 
         for doc in tv_docs:
-            if season:  # sezon bazlı silme
+            if season:  # sezon veya bölüm silme
                 for s in doc.get("seasons", []):
                     if s.get("season_number") == season:
                         eps_to_remove = []
@@ -92,7 +92,7 @@ def process_delete(db, id_type, val, imdb_fallback=None, test=False, category="a
                     else:
                         doc["seasons"] = doc_seasons
                         db["tv"].replace_one({"_id": doc["_id"]}, doc)
-            else:
+            else:  # komple silme
                 for s in doc.get("seasons", []):
                     for e in s.get("episodes", []):
                         for t in e.get("telegram", []):
@@ -192,151 +192,60 @@ async def send_output(message, data, prefix):
 
 
 # ------------------------------------------------------------------
-#  Standart komutlar
+#  /vsild – TV SİL + sezon/bölüm silme entegre
 # ------------------------------------------------------------------
 
-@Client.on_message(filters.command("vbilgi") & filters.private & CustomFilters.owner)
-async def vbilgi(client, message):
-    if len(message.command) < 2:
-        return await message.reply_text("Kullanım: /vbilgi id/link")
-    mongo = MongoClient(db_urls[1])
-    db = mongo[mongo.list_database_names()[0]]
-    idt, val, fb = extract_id(message.command[1])
-    data = process_delete(db, idt, val, fb, test=True, category="all")
-    await send_output(message, data, "vbilgi")
-
-
-@Client.on_message(filters.command("vsil") & filters.private & CustomFilters.owner)
-async def vsil(client, message):
-    if len(message.command) < 2:
-        return await message.reply_text("Kullanım: /vsil id/link")
-    mongo = MongoClient(db_urls[1])
-    db = mongo[mongo.list_database_names()[0]]
-    idt, val, fb = extract_id(message.command[1])
-    data = process_delete(db, idt, val, fb, test=False, category="all")
-    await send_output(message, data, "vsil")
-
-
-@Client.on_message(filters.command("vtest") & filters.private & CustomFilters.owner)
-async def vtest(client, message):
-    if len(message.command) < 2:
-        return await message.reply_text("Kullanım: /vtest id/link")
-    mongo = MongoClient(db_urls[1])
-    db = mongo[mongo.list_database_names()[0]]
-    idt, val, fb = extract_id(message.command[1])
-    data = process_delete(db, idt, val, fb, test=True, category="all")
-    await send_output(message, data, "vtest")
-
-
-@Client.on_message(filters.command("vsild") & filters.private & CustomFilters.owner)
+@Client.on_message(filters.command("sildizi") & filters.private & CustomFilters.owner)
 async def vsild(client, message):
     if len(message.command) < 2:
-        return await message.reply_text("Kullanım: /vsild id/link")
+        return await message.reply_text("Kullanım:\n/sildizi id\n/sildizi id s3\n/sildizi id s3e5e6")
+
     mongo = MongoClient(db_urls[1])
     db = mongo[mongo.list_database_names()[0]]
+
     idt, val, fb = extract_id(message.command[1])
-    data = process_delete(db, idt, val, fb, test=False, category="tv")
+
+    season = None
+    episodes = None
+
+    if len(message.command) >= 3:
+        txt = message.command[2].lower()
+        season_match = re.match(r"s(\d+)((?:e\d+)*)", txt)
+        if season_match:
+            season = int(season_match.group(1))
+            eps_str = season_match.group(2)
+            if eps_str:
+                episodes = [int(x[1:]) for x in re.findall(r"e\d+", eps_str)]
+
+    data = process_delete(db, idt, val, fb, test=False, category="tv", season=season, episodes=episodes)
     await send_output(message, data, "vsild")
 
 
-@Client.on_message(filters.command("vsildtest") & filters.private & CustomFilters.owner)
+# ------------------------------------------------------------------
+#  /vsildtest – Test modu (sezon/bölüm özellikleri entegre)
+# ------------------------------------------------------------------
+
+@Client.on_message(filters.command("sildizitest") & filters.private & CustomFilters.owner)
 async def vsildtest(client, message):
     if len(message.command) < 2:
-        return await message.reply_text("Kullanım: /vsildtest id/link")
+        return await message.reply_text("Kullanım:\n/sildizitest id\n/sildizitest id s3\n/sildizitest id s3e5e6")
+
     mongo = MongoClient(db_urls[1])
     db = mongo[mongo.list_database_names()[0]]
+
     idt, val, fb = extract_id(message.command[1])
-    data = process_delete(db, idt, val, fb, test=True, category="tv")
+
+    season = None
+    episodes = None
+
+    if len(message.command) >= 3:
+        txt = message.command[2].lower()
+        season_match = re.match(r"s(\d+)((?:e\d+)*)", txt)
+        if season_match:
+            season = int(season_match.group(1))
+            eps_str = season_match.group(2)
+            if eps_str:
+                episodes = [int(x[1:]) for x in re.findall(r"e\d+", eps_str)]
+
+    data = process_delete(db, idt, val, fb, test=True, category="tv", season=season, episodes=episodes)
     await send_output(message, data, "vsildtest")
-
-
-@Client.on_message(filters.command("vsilf") & filters.private & CustomFilters.owner)
-async def vsilf(client, message):
-    if len(message.command) < 2:
-        return await message.reply_text("Kullanım: /vsilf id/link")
-    mongo = MongoClient(db_urls[1])
-    db = mongo[mongo.list_database_names()[0]]
-    idt, val, fb = extract_id(message.command[1])
-    data = process_delete(db, idt, val, fb, test=False, category="movie")
-    await send_output(message, data, "vsilf")
-
-
-@Client.on_message(filters.command("vsilftest") & filters.private & CustomFilters.owner)
-async def vsilftest(client, message):
-    if len(message.command) < 2:
-        return await message.reply_text("Kullanım: /vsilftest id/link")
-    mongo = MongoClient(db_urls[1])
-    db = mongo[mongo.list_database_names()[0]]
-    idt, val, fb = extract_id(message.command[1])
-    data = process_delete(db, idt, val, fb, test=True, category="movie")
-    await send_output(message, data, "vsilftest")
-
-
-# ------------------------------------------------------------------
-#  /vsilsezon – Sezon silme
-# ------------------------------------------------------------------
-
-@Client.on_message(filters.command("vsilsezon") & filters.private & CustomFilters.owner)
-async def vsilsezon(client, message):
-    if len(message.command) < 3:
-        return await message.reply_text("Kullanım: /vsilsezon id s3")
-    mongo = MongoClient(db_urls[1])
-    db = mongo[mongo.list_database_names()[0]]
-    idt, val, fb = extract_id(message.command[1])
-    season_match = re.match(r"s(\d+)", message.command[2].lower())
-    if not season_match:
-        return await message.reply_text("Sezon formatı hatalı. Örn: s3")
-    season_num = int(season_match.group(1))
-    data = process_delete(db, idt, val, fb, test=False, category="tv", season=season_num)
-    await send_output(message, data, "vsilsezon")
-
-
-@Client.on_message(filters.command("vsilsezontest") & filters.private & CustomFilters.owner)
-async def vsilsezontest(client, message):
-    if len(message.command) < 3:
-        return await message.reply_text("Kullanım: /vsilsezontest id s3")
-    mongo = MongoClient(db_urls[1])
-    db = mongo[mongo.list_database_names()[0]]
-    idt, val, fb = extract_id(message.command[1])
-    season_match = re.match(r"s(\d+)", message.command[2].lower())
-    if not season_match:
-        return await message.reply_text("Sezon formatı hatalı. Örn: s3")
-    season_num = int(season_match.group(1))
-    data = process_delete(db, idt, val, fb, test=True, category="tv", season=season_num)
-    await send_output(message, data, "vsilsezontest")
-
-
-# ------------------------------------------------------------------
-#  /vsilbolum – Bölüm silme (s3e6e7e8)
-# ------------------------------------------------------------------
-
-@Client.on_message(filters.command("vsilbolum") & filters.private & CustomFilters.owner)
-async def vsilbolum(client, message):
-    if len(message.command) < 3:
-        return await message.reply_text("Kullanım: /vsilbolum id s3e5e6...")
-    mongo = MongoClient(db_urls[1])
-    db = mongo[mongo.list_database_names()[0]]
-    idt, val, fb = extract_id(message.command[1])
-    season_match = re.match(r"s(\d+)((?:e\d+)+)", message.command[2].lower())
-    if not season_match:
-        return await message.reply_text("Format hatalı. Örn: s3e6e7e8")
-    season_num = int(season_match.group(1))
-    eps = [int(x[1:]) for x in re.findall(r"e\d+", season_match.group(2))]
-    data = process_delete(db, idt, val, fb, test=False, category="tv", season=season_num, episodes=eps)
-    await send_output(message, data, "vsilbolum")
-
-
-@Client.on_message(filters.command("vsilbolumtest") & filters.private & CustomFilters.owner)
-async def vsilbolumtest(client, message):
-    if len(message.command) < 3:
-        return await message.reply_text("Kullanım: /vsilbolumtest id s3e4e5")
-    mongo = MongoClient(db_urls[1])
-    db = mongo[mongo.list_database_names()[0]]
-    idt, val, fb = extract_id(message.command[1])
-    season_match = re.match(r"s(\d+)((?:e\d+)+)", message.command[2].lower())
-    if not season_match:
-        return await message.reply_text("Format hatalı. Örn: s3e6e7e8")
-    season_num = int(season_match.group(1))
-    eps = [int(x[1:]) for x in re.findall(r"e\d+", season_match.group(2))]
-    data = process_delete(db, idt, val, fb, test=True, category="tv", season=season_num, episodes=eps)
-    await send_output(message, data, "vsilbolumtest")
