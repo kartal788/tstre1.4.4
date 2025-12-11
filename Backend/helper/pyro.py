@@ -152,21 +152,12 @@ BotCommand("set", "🎬 IMDb meta verilerini elle ekleyin."),
 BotCommand("vindir", "💾 Veritabanını indir."),
 BotCommand("m3uindir", "📂 M3U dosyasını indir."),
 BotCommand("log", "📄 Günlük dosyasını gönder."),
-BotCommand("fixmetadata", "⚙️ Meta Veri'nin boş alanlarını düzeltin."),
-BotCommand("vsil", "🗑️ Film veya dizileri seçerek silin."),
+BotCommand("fixmetadata", "⚙️ Meta veri boş alanlarını düzelt."),
 BotCommand("sil", "🗑️ Bütün filmleri ve dizileri sil."),
-BotCommand("vtest", "📝 Silmeden hangi dosyaların silineceğini test edin."),
-BotCommand("vbilgi", "ℹ️ Film veya dizi dosyalarının bilgilerini göster."),
-BotCommand("vsild", "📺 Sadece dizileri silin."),
-BotCommand("vsildtest", "📝 Dizi silme testini yapın."),
-BotCommand("vsilf", "🎬 Sadece filmleri silin."),
-BotCommand("vsilftest", "📝 Film silme testini yapın."),
-BotCommand("vsilsezon", "📌 Belirli sezonu silin. Örn: /vsilsezon 12345 s3"),
-BotCommand("vsilsezontest", "📝 Sezon silme testini yapın."),
-BotCommand("vsilbolum", "📌 Belirli bölümleri silin. Örn: /vsilbolum 12345 s3e6e7e8"),
-BotCommand("vsilbolumtest", "📝 Bölüm silme testini yapın.")
-
-    
+BotCommand("dizisil", "📺 Dizi silme (sezon ve bölüm destekli)."),
+BotCommand("dizisiltest", "📝 Dizi silme test modu."),
+BotCommand("filmsil", "🎬 Film silme."),
+BotCommand("filmsiltest", "📝 Film silme test modu.")    
 ]
 
 
