@@ -59,7 +59,7 @@ async def delete_file(client: Client, message: Message):
     last_command_time[user_id] = now
 
     if len(message.command) < 2:
-        await message.reply_text("⚠️ Kullanım:\n/vsil <id/link/dosya>", quote=True)
+        await message.reply_text("⚠️ Kullanım:\n/vsil id/link/dosya", quote=True)
         return
 
     raw_arg = message.command[1]
@@ -67,7 +67,7 @@ async def delete_file(client: Client, message: Message):
 
     try:
         if not db_urls or len(db_urls) < 2:
-            await message.reply_text("⚠️ İkinci veritabanı bulunamadı.")
+            await message.reply_text("⚠️ İkinci veritabanı bulunamadı.", quote=True)
             return
 
         mongo = MongoClient(db_urls[1])
@@ -188,10 +188,10 @@ async def delete_file(client: Client, message: Message):
             await client.send_document(message.chat.id, file_path,
                                        caption=f"🗑 {len(deleted_files)} dosya silindi.")
         else:
-            await message.reply_text("🗑 Silinen dosyalar:\n\n" + "\n".join(deleted_files))
+            await message.reply_text("🗑 Silinen dosyalar:\n\n" + "\n".join(deleted_files), quote=True)
 
     except Exception as e:
-        await message.reply_text(f"⚠️ Hata: {e}")
+        await message.reply_text(f"⚠️ Hata: {e}", quote=True)
         print("vsil hata:", e)
 
 
@@ -205,12 +205,12 @@ async def vbilgi(client: Client, message: Message):
     now = time()
 
     if user_id in last_command_time and now - last_command_time[user_id] < flood_wait:
-        await message.reply_text(f"⚠️ Lütfen {flood_wait} saniye bekleyin.")
+        await message.reply_text(f"⚠️ Lütfen {flood_wait} saniye bekleyin.", quote=True)
         return
     last_command_time[user_id] = now
 
     if len(message.command) < 2:
-        await message.reply_text("📌 Kullanım:\n/vbilgi <id/link/dosya>")
+        await message.reply_text("📌 Kullanım:\n/vbilgi id/link/dosya", quote=True)
         return
 
     raw_arg = message.command[1]
@@ -218,7 +218,7 @@ async def vbilgi(client: Client, message: Message):
 
     try:
         if not db_urls or len(db_urls) < 2:
-            await message.reply_text("⚠️ Veritabanı bulunamadı.")
+            await message.reply_text("⚠️ Veritabanı bulunamadı.", quote=True)
             return
 
         mongo = MongoClient(db_urls[1])
@@ -312,12 +312,12 @@ async def vbilgi(client: Client, message: Message):
                                 )
 
         if not result_text:
-            await message.reply_text("⚠️ Bilgi bulunamadı.")
+            await message.reply_text("⚠️ Bilgi bulunamadı.", quote=True)
         else:
-            await message.reply_text(result_text)
+            await message.reply_text(result_text, quote=True)
 
     except Exception as e:
-        await message.reply_text(f"Hata: {e}")
+        await message.reply_text(f"Hata: {e}", quote=True)
         print("vbilgi hata:", e)
 
 
@@ -335,12 +335,12 @@ async def vtest(client: Client, message: Message):
     now = time()
 
     if user_id in last_command_time and now - last_command_time[user_id] < flood_wait:
-        await message.reply_text(f"⚠️ {flood_wait} saniye bekleyin.")
+        await message.reply_text(f"⚠️ {flood_wait} saniye bekleyin.", quote=True)
         return
     last_command_time[user_id] = now
 
     if len(message.command) < 2:
-        await message.reply_text("📌 Kullanım: /vtest <id/link/dosya>")
+        await message.reply_text("📌 Kullanım: /vtest id/link/dosya", quote=True)
         return
 
     raw_arg = message.command[1]
@@ -348,7 +348,7 @@ async def vtest(client: Client, message: Message):
 
     try:
         if not db_urls or len(db_urls) < 2:
-            await message.reply_text("⚠️ Veritabanı bulunamadı.")
+            await message.reply_text("⚠️ Veritabanı bulunamadı.", quote=True)
             return
 
         mongo = MongoClient(db_urls[1])
@@ -423,16 +423,13 @@ async def vtest(client: Client, message: Message):
 
         # ---- SONUÇ ----
         if not to_delete:
-            await message.reply_text("⚠️ Silinecek bir şey bulunamadı.")
+            await message.reply_text("⚠️ Silinecek bir şey bulunamadı.", quote=True)
             return
 
-        await message.reply_text(
-            "🧪 *Test modu*\n"
-            f"Bu dosyalar *SİLİNECEK* ama **/vtest silmez**:\n\n" +
-            "\n".join(to_delete),
-            parse_mode="markdown"
-        )
+        # Gönderirken düz metin olarak gönderiyoruz; parse_mode kaldırıldı
+        preview_text = "🧪 Test modu\nBu dosyalar SİLİNECEK (ama /vtest hiçbir şeyi silmez):\n\n" + "\n".join(to_delete)
+        await message.reply_text(preview_text, quote=True)
 
     except Exception as e:
-        await message.reply_text(f"Hata: {e}")
+        await message.reply_text(f"Hata: {e}", quote=True)
         print("vtest hata:", e)
