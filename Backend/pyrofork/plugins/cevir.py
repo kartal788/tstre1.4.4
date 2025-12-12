@@ -204,7 +204,7 @@ async def turkce_icerik(client: Client, message: Message):
 
     start_time = time.time()
     last_update = 0
-    update_interval = 4 # Güncelleme aralığı 4 saniyeye düşürüldü
+    update_interval = 15 # Güncelleme aralığı 4 saniyeye düşürüldü
     
     # Ortalama işlem hızı (öğe/saniye)
     processed_count_start = 0 
