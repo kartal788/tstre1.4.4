@@ -136,9 +136,18 @@ def generate_progress_text(progress_data):
         # items/sec hesapla
         elapsed_sec = max(1, sum(int(x) * t for x, t in zip([3600, 60, 1], map(int, data['elapsed'].split(":")))))
         speed = data['done'] / elapsed_sec if elapsed_sec > 0 else 0
+
+        percent = (data['done'] / data['total'] * 100) if data['total'] > 0 else 0
+
+        # %0 veya %100 ise progress bar göstermeyeceğiz
+        if data['total'] == 0 or percent == 0 or percent == 100:
+            progress_line = ""
+        else:
+            progress_line = f"{progress_bar(data['done'], data['total'])}\n"
+
         text += (
             f"📌 {name}: {data['done']}/{data['total']}\n"
-            f"{progress_bar(data['done'], data['total'])}\n"
+            f"{progress_line}"
             f"Kalan: {data['total'] - data['done']}, Hatalar: {data['errors']}\n"
             f"Süre: {data['elapsed']} | ETA: {data['eta']} | Hız: {speed:.2f} items/sec\n"
             f"CPU: {data['cpu']}% | RAM: {data['ram']}% | Workers: {data['workers']} | Batch: {data['batch']}\n\n"
@@ -277,8 +286,8 @@ async def turkce_icerik(client: Client, message: Message):
 
     summary = (
         "🎉 Türkçe Çeviri Sonuçları\n\n"
-        f"📌 Filmler: {movie_done}/{movie_total}\n{progress_bar(movie_done, movie_total)}\nKalan: {movie_total - movie_done}, Hatalar: {movie_errors}\n\n"
-        f"📌 Diziler: {series_done}/{series_total}\n{progress_bar(series_done, series_total)}\nKalan: {series_total - series_done}, Hatalar: {series_errors}\n\n"
+        f"📌 Filmler: {movie_done}/{movie_total}\n{progress_bar(movie_done, movie_total) if movie_done < movie_total else ''}\nKalan: {movie_total - movie_done}, Hatalar: {movie_errors}\n\n"
+        f"📌 Diziler: {series_done}/{series_total}\n{progress_bar(series_done, series_total) if series_done < series_total else ''}\nKalan: {series_total - series_done}, Hatalar: {series_errors}\n\n"
         f"📊 Genel Özet\nToplam içerik : {total_all}\nBaşarılı     : {done_all - errors_all}\nHatalı       : {errors_all}\nKalan        : {remaining_all}\nToplam süre  : {total_time_str}\n"
     )
     try:
