@@ -5,24 +5,14 @@ from pymongo import MongoClient
 from psutil import virtual_memory, cpu_percent, disk_usage
 from time import time
 import os
-import importlib.util
 from collections import defaultdict
 
-CONFIG_PATH = "/home/debian/dfbot/config.env"
 DOWNLOAD_DIR = "/"
 bot_start_time = time()
 
-# ---------------- Config Database Okuma ----------------
-def read_database_from_config():
-    if not os.path.exists(CONFIG_PATH):
-        return None
-    spec = importlib.util.spec_from_file_location("config", CONFIG_PATH)
-    config = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(config)
-    return getattr(config, "DATABASE", None)
-
+# ---------------- Sadece Ortam Değişkeninden DATABASE ----------------
 def get_db_urls():
-    db_raw = read_database_from_config() or os.getenv("DATABASE") or ""
+    db_raw = os.getenv("DATABASE", "")
     return [u.strip() for u in db_raw.split(",") if u.strip()]
 
 # ---------------- Database İstatistikleri ve Tür Bazlı ----------------
@@ -58,7 +48,7 @@ def get_system_status():
     ram = round(virtual_memory().percent, 1)
 
     disk = disk_usage(DOWNLOAD_DIR)
-    free_disk = round(disk.free / (1024 ** 3), 2)  # GB
+    free_disk = round(disk.free / (1024 ** 3), 2)
     free_percent = round((disk.free / disk.total) * 100, 1)
 
     uptime_sec = int(time() - bot_start_time)
@@ -78,11 +68,9 @@ async def send_statistics(client: Client, message: Message):
             await message.reply_text("⚠️ İkinci veritabanı bulunamadı.")
             return
 
-        # İkinci MongoDB’den veri çek
         total_movies, total_series, storage_mb, storage_percent, genre_stats = get_db_stats_and_genres(db_urls[1])
         cpu, ram, free_disk, free_percent, uptime = get_system_status()
 
-        # Tür istatistikleri tablo formatında
         genre_lines = []
         for genre, counts in sorted(genre_stats.items(), key=lambda x: x[0]):
             genre_lines.append(f"{genre:<12} | Film: {counts['film']:<3} | Dizi: {counts['dizi']:<3}")
