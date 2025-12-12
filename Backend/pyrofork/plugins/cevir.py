@@ -7,13 +7,12 @@ import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 import psutil
 import time
-import math
 import os
 
 from Backend.helper.custom_filter import CustomFilters  # Owner filtresi için
 
-# GLOBAL STOP EVENT
-stop_event = asyncio.Event()
+# ------------ GLOBAL STOP EVENT ------------
+stop_event = multiprocessing.Event()
 
 # ------------ DATABASE Bağlantısı ------------
 db_raw = os.getenv("DATABASE", "")
@@ -45,7 +44,7 @@ def dynamic_config():
     elif cpu_percent < 60:
         workers = max(1, cpu_count)
     else:
-        workers = 1
+        workers = max(2, 4)  # minimum 2-4 worker
 
     if ram_percent < 40:
         batch = 80
@@ -80,7 +79,7 @@ def progress_bar(current, total, bar_length=12):
     bar = "⬢" * filled_length + "⬡" * (bar_length - filled_length)
     return f"[{bar}] {percent:.2f}%"
 
-# ------------ Worker: batch çevirici ------------
+# ------------ Batch Çevirici Worker ------------
 def translate_batch_worker(batch, stop_flag):
     CACHE = {}
     results = []
@@ -117,7 +116,41 @@ def translate_batch_worker(batch, stop_flag):
 
     return results
 
-# ------------ Callback: iptal butonu ------------
+# ------------ Progress Güncelleme Fonksiyonu ------------
+async def update_progress(msg, collections, start_time):
+    text = ""
+    total_done = 0
+    total_all = 0
+
+    cpu = psutil.cpu_percent(interval=None)
+    ram_percent = psutil.virtual_memory().percent
+
+    for col_summary in collections:
+        text += (
+            f"📌 {col_summary['name']}: {col_summary['done']}/{col_summary['total']}\n"
+            f"{progress_bar(col_summary['done'], col_summary['total'])}\n"
+            f"Kalan: {col_summary['total'] - col_summary['done']}\n\n"
+        )
+        total_done += col_summary['done']
+        total_all += col_summary['total']
+
+    remaining_all = total_all - total_done
+    elapsed_time = time.time() - start_time
+
+    text += (
+        f"⏱ Süre: {round(elapsed_time,2)} sn | Kalan toplam: {remaining_all}\n"
+        f"💻 CPU: {cpu}% | RAM: {ram_percent}%"
+    )
+
+    try:
+        await msg.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
+        )
+    except:
+        pass
+
+# ------------ Callback: İptal Butonu ------------
 async def handle_stop(callback_query: CallbackQuery):
     stop_event.set()
     try:
@@ -143,16 +176,17 @@ async def turkce_icerik(client: Client, message: Message):
 
     collections = [
         {"col": movie_col, "name": "Filmler", "total": 0, "done": 0, "errors": 0},
-        {"col": series_col, "name": "Diziler", "total": 0, "done": 0, "errors": 0}
+        {"col": series_col, "name": "Diziler", "total": 0, "done": 0, "errors": 0}  # Diziler ikinci
     ]
 
+    # Toplam doküman sayısı
     for c in collections:
         c["total"] = c["col"].count_documents({})
 
     start_time = time.time()
-    last_update = 0
     update_interval = 5
 
+    # Koleksiyonları sırayla çevir
     for c in collections:
         col = c["col"]
         name = c["name"]
@@ -165,77 +199,46 @@ async def turkce_icerik(client: Client, message: Message):
 
         idx = 0
         workers, batch_size = dynamic_config()
-        pool = ProcessPoolExecutor(max_workers=workers)
 
-        while idx < len(ids):
-            if stop_event.is_set():
-                break
+        # Her koleksiyon için ayrı pool
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            last_update = 0
+            while idx < len(ids):
+                if stop_event.is_set():
+                    break
 
-            batch_ids = ids[idx: idx + batch_size]
-            batch_docs = list(col.find({"_id": {"$in": batch_ids}}))
+                batch_ids = ids[idx: idx + batch_size]
+                batch_docs = list(col.find({"_id": {"$in": batch_ids}}))
 
-            try:
-                loop = asyncio.get_event_loop()
-                future = loop.run_in_executor(pool, translate_batch_worker, batch_docs, stop_event)
-                results = await future
-            except Exception:
-                errors += len(batch_docs)
+                try:
+                    loop = asyncio.get_running_loop()
+                    future = loop.run_in_executor(pool, translate_batch_worker, batch_docs, stop_event)
+                    results = await future
+                except Exception:
+                    errors += len(batch_docs)
+                    idx += len(batch_ids)
+                    await asyncio.sleep(1)
+                    continue
+
+                for _id, upd in results:
+                    try:
+                        if upd:
+                            col.update_one({"_id": _id}, {"$set": upd})
+                        done += 1
+                    except:
+                        errors += 1
+
                 idx += len(batch_ids)
-                await asyncio.sleep(1)
-                continue
+                c["done"] = done
+                c["errors"] = errors
 
-            for _id, upd in results:
-                try:
-                    if upd:
-                        col.update_one({"_id": _id}, {"$set": upd})
-                    done += 1
-                except:
-                    errors += 1
-
-            idx += len(batch_ids)
-            c["done"] = done
-            c["errors"] = errors
-
-            # 🔥 Tek Mesaj Güncellemesi (Hatalar toplam: kaldırıldı)
-            if time.time() - last_update > update_interval or idx >= len(ids):
-                text = ""
-                total_done = 0
-                total_all = 0
-
-                cpu = psutil.cpu_percent(interval=None)
-                ram_percent = psutil.virtual_memory().percent
-
-                for col_summary in collections:
-                    text += (
-                        f"📌 {col_summary['name']}: {col_summary['done']}/{col_summary['total']}\n"
-                        f"{progress_bar(col_summary['done'], col_summary['total'])}\n"
-                        f"Kalan: {col_summary['total'] - col_summary['done']}\n\n"
-                    )
-                    total_done += col_summary['done']
-                    total_all += col_summary['total']
-
-                remaining_all = total_all - total_done
-                elapsed_time = time.time() - start_time
-
-                text += (
-                    f"⏱ Süre: {round(elapsed_time,2)} sn | Kalan toplam: {remaining_all}\n"
-                    f"💻 CPU: {cpu}% | RAM: {ram_percent}%"
-                )
-
-                try:
-                    await start_msg.edit_text(
-                        text,
-                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
-                    )
-                except:
-                    pass
-                last_update = time.time()
-
-        pool.shutdown(wait=False)
+                # Progress bar güncelleme
+                if time.time() - last_update > update_interval or idx >= len(ids):
+                    await update_progress(start_msg, collections, start_time)
+                    last_update = time.time()
 
     # ------------ SONUÇ EKRANI ------------
     final_text = "🎉 Türkçe Çeviri Sonuçları\n\n"
-
     for col_summary in collections:
         final_text += (
             f"📌 {col_summary['name']}: {col_summary['done']}/{col_summary['total']}\n"
