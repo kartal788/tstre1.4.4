@@ -15,7 +15,7 @@ from Backend.helper.custom_filter import CustomFilters  # Owner filtresi için
 # GLOBAL STOP EVENT
 stop_event = asyncio.Event()
 
-# ------------ DATABASE Bağlantısı (Sadece ortam değişkeni) ------------
+# ------------ DATABASE Bağlantısı ------------
 db_raw = os.getenv("DATABASE", "")
 if not db_raw:
     raise Exception("DATABASE ortam değişkeni bulunamadı!")
@@ -135,14 +135,14 @@ async def turkce_icerik(client: Client, message: Message):
     global stop_event
     stop_event.clear()
 
-    # Başlangıç mesajı (tek mesaj kullanılacak)
+    # Başlangıç mesajı (tek mesaj)
     start_msg = await message.reply_text(
         "🇹🇷 Türkçe çeviri hazırlanıyor...\nİlerleme tek mesajda gösterilecektir.",
         parse_mode=enums.ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
     )
 
-    # Koleksiyon listeleri ve sayaçları
+    # Koleksiyonlar ve sayaçları
     collections = [
         {"col": movie_col, "name": "Filmler", "total": 0, "done": 0, "errors": 0},
         {"col": series_col, "name": "Diziler", "total": 0, "done": 0, "errors": 0}
@@ -210,6 +210,9 @@ async def turkce_icerik(client: Client, message: Message):
                 total_all = 0
                 total_errors = 0
 
+                cpu = psutil.cpu_percent(interval=None)
+                ram_percent = psutil.virtual_memory().percent
+
                 for col_summary in collections:
                     text += (
                         f"📌 {col_summary['name']}: {col_summary['done']}/{col_summary['total']}\n"
@@ -222,7 +225,10 @@ async def turkce_icerik(client: Client, message: Message):
 
                 remaining_all = total_all - total_done
                 elapsed_time = time.time() - start_time
-                text += f"⏱ Süre: {round(elapsed_time,2)} sn | Kalan toplam: {remaining_all} | Hatalar toplam: {total_errors}"
+                text += (
+                    f"⏱ Süre: {round(elapsed_time,2)} sn | Kalan toplam: {remaining_all} | Hatalar toplam: {total_errors}\n"
+                    f"💻 CPU: {cpu}% | RAM: {ram_percent}%"
+                )
 
                 try:
                     await start_msg.edit_text(
@@ -235,14 +241,34 @@ async def turkce_icerik(client: Client, message: Message):
 
         pool.shutdown(wait=False)
 
-    # Son özet mesajı
-    final_text = "🎉 Türkçe Çeviri Tamamlandı!\n\n"
+    # Sonuç ekranı
+    final_text = "🎉 Türkçe Çeviri Sonuçları\n\n"
     for col_summary in collections:
         final_text += (
             f"📌 {col_summary['name']}: {col_summary['done']}/{col_summary['total']}\n"
             f"{progress_bar(col_summary['done'], col_summary['total'])}\n"
             f"Kalan: {col_summary['total'] - col_summary['done']}, Hatalar: {col_summary['errors']}\n\n"
         )
+
+    # Genel özet
+    total_all = sum(c["total"] for c in collections)
+    done_all = sum(c["done"] for c in collections)
+    errors_all = sum(c["errors"] for c in collections)
+    remaining_all = total_all - done_all
+    total_time = round(time.time() - start_time, 2)
+    hours, rem = divmod(total_time, 3600)
+    minutes, seconds = divmod(rem, 60)
+    eta_str = f"{int(hours)}s{int(minutes)}d{int(seconds)}s"
+
+    final_text += (
+        f"📊 Genel Özet\n"
+        f"Toplam içerik : {total_all}\n"
+        f"Başarılı     : {done_all - errors_all}\n"
+        f"Hatalı       : {errors_all}\n"
+        f"Kalan        : {remaining_all}\n"
+        f"Toplam süre  : {eta_str}"
+    )
+
     try:
         await start_msg.edit_text(final_text)
     except:
