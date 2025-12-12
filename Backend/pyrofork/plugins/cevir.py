@@ -56,7 +56,7 @@ def dynamic_config():
     else:
         batch = 10
 
-    return workers, batch
+    return workers, batch, cpu_percent, ram_percent
 
 # ------------ Güvenli Çeviri Fonksiyonu ------------
 def translate_text_safe(text, cache):
@@ -118,7 +118,7 @@ def translate_batch_worker(batch, stop_flag):
     return results
 
 # ------------ Paralel koleksiyon işleyici ------------
-async def process_collection_parallel(collection, name, message):
+async def process_collection_parallel(collection, name, message, progress_data):
     loop = asyncio.get_event_loop()
     total = collection.count_documents({})
     done = 0
@@ -130,7 +130,7 @@ async def process_collection_parallel(collection, name, message):
     ids = [d["_id"] for d in ids_cursor]
 
     idx = 0
-    workers, batch_size = dynamic_config()
+    workers, batch_size, _, _ = dynamic_config()
     pool = ProcessPoolExecutor(max_workers=workers)
 
     while idx < len(ids):
@@ -170,18 +170,23 @@ async def process_collection_parallel(collection, name, message):
         eta_str = time.strftime("%H:%M:%S", time.gmtime(eta)) if math.isfinite(eta) else "∞"
         elapsed_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
 
-        cpu = psutil.cpu_percent(interval=None)
-        ram_percent = psutil.virtual_memory().percent
-        sys_info = f"CPU: {cpu}% | RAM: %{ram_percent}"
+        # Güncel CPU/RAM ve batch info
+        _, _, cpu_percent, ram_percent = dynamic_config()
 
-        if time.time() - last_update > 30 or idx >= len(ids):
-            text = (
-                f"{name}: {done}/{total}\n"
-                f"{progress_bar(done, total)}\n\n"
-                f"Kalan: {remaining}, Hatalar: {errors}\n"
-                f"Süre: {elapsed_str} | ETA: {eta_str}\n"
-                f"{sys_info}"
-            )
+        progress_data[name] = {
+            "done": done,
+            "total": total,
+            "errors": errors,
+            "elapsed": elapsed_str,
+            "eta": eta_str,
+            "cpu": cpu_percent,
+            "ram": ram_percent,
+            "workers": workers,
+            "batch": batch_size
+        }
+
+        if time.time() - last_update > 5 or idx >= len(ids):
+            text = generate_progress_text(progress_data)
             try:
                 await message.edit_text(
                     text,
@@ -194,6 +199,19 @@ async def process_collection_parallel(collection, name, message):
     pool.shutdown(wait=False)
     elapsed_time = round(time.time() - start_time, 2)
     return total, done, errors, elapsed_time
+
+# ------------ İlerleme mesajı oluşturma ------------
+def generate_progress_text(progress_data):
+    text = "🇹🇷 Türkçe çeviri ilerlemesi\n\n"
+    for name, data in progress_data.items():
+        text += (
+            f"📌 {name}: {data['done']}/{data['total']}\n"
+            f"{progress_bar(data['done'], data['total'])}\n"
+            f"Kalan: {data['total'] - data['done']}, Hatalar: {data['errors']}\n"
+            f"Süre: {data['elapsed']} | ETA: {data['eta']}\n"
+            f"CPU: {data['cpu']}% | RAM: {data['ram']}% | Workers: {data['workers']} | Batch: {data['batch']}\n\n"
+        )
+    return text
 
 # ------------ Callback: iptal butonu ------------
 async def handle_stop(callback_query: CallbackQuery):
@@ -214,17 +232,24 @@ async def turkce_icerik(client: Client, message: Message):
     stop_event.clear()
 
     start_msg = await message.reply_text(
-        "🇹🇷 Türkçe çeviri hazırlanıyor.\nİlerleme tek mesajda gösterilecektir.",
+        "🇹🇷 Türkçe çeviri hazırlanıyor...\nİlerleme tek mesajda gösterilecektir.",
         parse_mode=enums.ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
     )
 
+    progress_data = {
+        "Filmler": {"done": 0, "total": 0, "errors": 0, "elapsed": "00:00:00", "eta": "∞",
+                    "cpu": 0, "ram": 0, "workers": 0, "batch": 0},
+        "Diziler": {"done": 0, "total": 0, "errors": 0, "elapsed": "00:00:00", "eta": "∞",
+                    "cpu": 0, "ram": 0, "workers": 0, "batch": 0}
+    }
+
     movie_total, movie_done, movie_errors, movie_time = await process_collection_parallel(
-        movie_col, "Filmler", start_msg
+        movie_col, "Filmler", start_msg, progress_data
     )
 
     series_total, series_done, series_errors, series_time = await process_collection_parallel(
-        series_col, "Diziler", start_msg
+        series_col, "Diziler", start_msg, progress_data
     )
 
     total_all = movie_total + series_total
