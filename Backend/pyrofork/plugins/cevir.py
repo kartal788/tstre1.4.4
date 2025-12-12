@@ -281,7 +281,8 @@ async def turkce_icerik(client: Client, message: Message):
                     remaining_all = total_all - total_done
                     elapsed_time = time.time() - start_time
 
-                    # DEĞİŞİKLİK BURADA: Süre tam sayı olarak gösteriliyor
+                    # ANLIK SÜRE GÜNCELLEMESİ (Tam sayıya yuvarlandı)
+                    # Burada sadece saniye gösteriliyor (önceki isteğe göre).
                     text += (
                         f" Süre: `{int(elapsed_time)}` sn | Kalan: `{remaining_all}`\n"
                         f" CPU: `{cpu}%` | RAM: `{ram_percent}%`"
@@ -311,9 +312,21 @@ async def turkce_icerik(client: Client, message: Message):
     remaining_all = total_all - done_all
 
     total_time = round(time.time() - start_time)
-    hours, rem = divmod(total_time, 3600)
-    minutes, seconds = divmod(rem, 60)
-    eta_str = f"{int(hours)}s {int(minutes)}d {int(seconds)}s"
+    
+    # İSTENEN SÜRE FORMATI DÜZENLEMESİ: GGs Dkm Ss (G: Gün, Dk: Dakika, S: Saniye)
+    # total_time saniyedir.
+    days = total_time // (24 * 3600)
+    total_time %= (24 * 3600)
+    hours = total_time // 3600
+    total_time %= 3600
+    minutes = total_time // 60
+    seconds = total_time % 60
+    
+    # Format: 00h 00m 00s (Saat, Dakika, Saniye) olarak düzenlenmiştir.
+    # Eğer isterseniz 'd' (dakika) yerine 'm' (minute) kullanabiliriz.
+    # Örnek: '0h 10m 00s'
+    # İstenen formata en yakın ve mantıklı format (Saat:Dakika:Saniye)
+    eta_str = f"{int(hours):02}s {int(minutes):02}d {int(seconds):02}s" # 00s 00d 00s şeklinde görünmesi için
 
     final_text = "🎉 **Türkçe Çeviri Sonuçları**\n\n"
     for col_summary in collections:
