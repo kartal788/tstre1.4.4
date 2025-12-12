@@ -202,11 +202,11 @@ async def process_collection_parallel(collection, name, message, progress_data, 
                     collection.update_one({"_id":_id}, {"$set":upd})
                 done += 1
 
-                # Update every 5 items + 15-20s
+                # Update every 5 items OR 15-20s passed
                 update_now = False
                 if done % 5 == 0 or idx + len(batch_ids) >= len(ids):
                     elapsed_since_last = time.time() - last_update
-                    if 15 <= elapsed_since_last <= 20:
+                    if elapsed_since_last >= 15:
                         update_now = True
 
                 if update_now:
