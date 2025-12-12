@@ -1,4 +1,4 @@
-import asyncio 
+import asyncio
 from pyrogram import Client, filters, enums
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pymongo import MongoClient
@@ -168,6 +168,7 @@ async def process_collection_parallel(collection, name, message):
         remaining = total - done
         eta = remaining / speed if speed > 0 else float("inf")
         eta_str = time.strftime("%H:%M:%S", time.gmtime(eta)) if math.isfinite(eta) else "∞"
+        elapsed_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
 
         cpu = psutil.cpu_percent(interval=None)
         ram_percent = psutil.virtual_memory().percent
@@ -178,7 +179,7 @@ async def process_collection_parallel(collection, name, message):
                 f"{name}: {done}/{total}\n"
                 f"{progress_bar(done, total)}\n\n"
                 f"Kalan: {remaining}, Hatalar: {errors}\n"
-                f"Süre: {eta_str}\n"
+                f"Süre: {elapsed_str} | ETA: {eta_str}\n"
                 f"{sys_info}"
             )
             try:
@@ -234,13 +235,13 @@ async def turkce_icerik(client: Client, message: Message):
 
     hours, rem = divmod(total_time, 3600)
     minutes, seconds = divmod(rem, 60)
-    eta_str = f"{int(hours)}s{int(minutes)}d{int(seconds)}s"
+    total_time_str = f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
 
     summary = (
         "🎉 Türkçe Çeviri Sonuçları\n\n"
         f"📌 Filmler: {movie_done}/{movie_total}\n{progress_bar(movie_done, movie_total)}\nKalan: {movie_total - movie_done}, Hatalar: {movie_errors}\n\n"
         f"📌 Diziler: {series_done}/{series_total}\n{progress_bar(series_done, series_total)}\nKalan: {series_total - series_done}, Hatalar: {series_errors}\n\n"
-        f"📊 Genel Özet\nToplam içerik : {total_all}\nBaşarılı     : {done_all - errors_all}\nHatalı       : {errors_all}\nKalan        : {remaining_all}\nToplam süre  : {eta_str}\n"
+        f"📊 Genel Özet\nToplam içerik : {total_all}\nBaşarılı     : {done_all - errors_all}\nHatalı       : {errors_all}\nKalan        : {remaining_all}\nToplam süre  : {total_time_str}\n"
     )
     try:
         await start_msg.edit_text(summary, parse_mode=enums.ParseMode.MARKDOWN)
