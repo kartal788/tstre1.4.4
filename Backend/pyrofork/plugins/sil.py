@@ -2,31 +2,19 @@ from pyrogram import Client, filters
 from Backend.helper.custom_filter import CustomFilters
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
-import importlib.util
 import asyncio
 
-# ------------ DATABASE Bağlantısı ------------
-CONFIG_PATH = "/home/debian/dfbot/config.env"
+# ------------ SADECE ENV'DEN DATABASE AL ------------
 
-def read_database_from_config():
-    if not os.path.exists(CONFIG_PATH):
-        return None
-    spec = importlib.util.spec_from_file_location("config", CONFIG_PATH)
-    config = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(config)
-    return getattr(config, "DATABASE", None)
+db_raw = os.getenv("DATABASE", "")
+db_urls = [u.strip() for u in db_raw.split(",") if u.strip()]
 
-def get_db_urls():
-    db_raw = read_database_from_config()
-    if not db_raw:
-        db_raw = os.getenv("DATABASE", "")
-    return [u.strip() for u in db_raw.split(",") if u.strip()]
-
-db_urls = get_db_urls()
 if len(db_urls) < 2:
     raise Exception("İkinci DATABASE bulunamadı!")
 
 MONGO_URL = db_urls[1]
+
+# ------------ MONGO BAĞLANTISI ------------
 client = AsyncIOMotorClient(MONGO_URL)
 db = None
 movie_col = None
@@ -75,21 +63,25 @@ async def handle_confirmation(client, message):
 
     text = message.text.strip().lower()
 
-    # Timeout task'ını iptal et
+    # Timeout'u iptal et
     awaiting_confirmation[user_id].cancel()
     awaiting_confirmation.pop(user_id, None)
 
     if text == "evet":
         await message.reply_text("🗑️ Silme işlemi başlatılıyor...")
         await init_db()
+
         movie_count = await movie_col.count_documents({})
         series_count = await series_col.count_documents({})
+
         await movie_col.delete_many({})
         await series_col.delete_many({})
+
         await message.reply_text(
             f"✅ Silme işlemi tamamlandı.\n\n"
             f"📌 Filmler silindi: {movie_count}\n"
             f"📌 Diziler silindi: {series_count}"
         )
+
     elif text == "hayır":
         await message.reply_text("❌ Silme işlemi iptal edildi.")
