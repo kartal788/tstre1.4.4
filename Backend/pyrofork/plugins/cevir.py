@@ -86,15 +86,19 @@ def progress_bar(current, total, bar_length=12):
     percent_display = min(percent, 100.00)
     return f"[{bar}] {percent_display:.2f}%"
 
-# ------------ Zaman Formatlama Yardımcı Fonksiyonu ------------
-def format_time(total_seconds):
-    """Saniyeyi Saat:Dakika:Saniye formatına çevirir (HH:MM:SS)"""
+# ------------ Zaman Formatlama Yardımcı Fonksiyonu (Özel Format) ------------
+def format_time_custom(total_seconds):
+    """
+    Saniyeyi Saat(s) Dakika(d) Saniye(s) formatına çevirir (Örn: 0s 0d 05s)
+    """
     if total_seconds is None or total_seconds < 0:
         return "N/A"
     total_seconds = int(total_seconds)
     hours, rem = divmod(total_seconds, 3600)
     minutes, seconds = divmod(rem, 60)
-    return f"{hours:02}:{minutes:02}:{seconds:02}"
+    
+    # İstenen format: 0s 0d 00s
+    return f"{int(hours)}s {int(minutes)}d {int(seconds):02}s"
 
 # ------------ Worker: batch çevirici ------------
 def translate_batch_worker(batch_data):
@@ -207,7 +211,7 @@ async def turkce_icerik(client: Client, message: Message):
     pool = ProcessPoolExecutor(max_workers=workers)
     
     try:
-        for c_index, c in enumerate(collections): # c_index ekledik
+        for c_index, c in enumerate(collections):
             col = c["col"]
             name = c["name"]
             total = c["total"]
@@ -285,21 +289,26 @@ async def turkce_icerik(client: Client, message: Message):
                         total_errors += col_summary['errors']
                         
                     # --- YENİ İLERLEME GÖSTERİMİ ---
-                    # 1. Mevcut Koleksiyonun Durumu
+                    
+                    # 1. Mevcut Koleksiyonun Durumu (İstenen formatta)
+                    remaining_current = c['total'] - c['done']
                     text += (
                         f"📌 **{c['name']}**: {c['done']}/{c['total']}\n"
                         f"{progress_bar(c['done'], c['total'])}\n"
-                        f"Kalan: {c['total'] - c['done']}\n\n"
+                        # Kalan satırı kaldırıldı
+                        f"Kalan: {remaining_current}\n\n" # Kalanı sadece koleksiyon için ekleyelim
                     )
                     
                     # 2. Diğer Koleksiyonların Durumu
                     if len(collections) > 1:
                         for col_summary in collections:
                             if col_summary['name'] != c['name']:
+                                # Sadece tamamlananları göster
                                 if col_summary['done'] == col_summary['total']:
                                     text += f"✅ **{col_summary['name']}** - Tamamlandı: {col_summary['total']}\n"
-                                else:
-                                    text += f"⏳ **{col_summary['name']}** - Beklemede\n"
+                                # İşlenmemişse sadece bekliyor diyebiliriz (isteğe bağlı)
+                                elif col_summary['done'] == 0:
+                                     text += f"⏳ **{col_summary['name']}** - Beklemede\n"
                         text += "\n"
 
                     cpu = psutil.cpu_percent(interval=None)
@@ -309,24 +318,21 @@ async def turkce_icerik(client: Client, message: Message):
                     remaining_all = total_all - total_done
                     
                     # 3. ETA ve Hız Hesaplaması
-                    time_diff = elapsed_time - processed_count_start
-                    
                     # İlk başta hızı sıfır almamak için basit bir kontrol
                     if total_done > 0 and elapsed_time > 0:
                         speed = total_done / elapsed_time # öğe/saniye
                         # Kalan süreyi hesapla: Kalan öğe / Hız
                         eta_seconds = remaining_all / speed
                     else:
-                        speed = 0
                         eta_seconds = None
 
                     # Formatlanmış Geçen Süre ve ETA
-                    elapsed_time_str = format_time(elapsed_time)
-                    eta_str = format_time(eta_seconds) if eta_seconds is not None else "N/A"
+                    elapsed_time_str = format_time_custom(elapsed_time)
+                    eta_str = format_time_custom(eta_seconds) if eta_seconds is not None else "N/A"
 
-
+                    # İSTENEN SÜRE FORMATI: Süre: 0s 0d 57s (0s 0d 2s)
                     text += (
-                        f" ⏱️ Süre: `{elapsed_time_str}` | ETA: `{eta_str}`\n"
+                        f" Süre: `{elapsed_time_str}` (`{eta_str}`)\n"
                         f" CPU: `{cpu}%` | RAM: `{ram_percent}%`"
                     )
 
@@ -342,7 +348,6 @@ async def turkce_icerik(client: Client, message: Message):
                         pass
                     
                     last_update = time.time()
-                    processed_count_start = total_done # Yeni başlangıç sayacını güncelle
 
     finally:
         # Hata olsa bile havuzu kapat
@@ -356,8 +361,8 @@ async def turkce_icerik(client: Client, message: Message):
 
     total_time = round(time.time() - start_time)
     
-    # Süre formatını tekrar ayarla (HH:MM:SS)
-    final_time_str = format_time(total_time)
+    # Süre formatını final ekranda formatla (0s 0d 00s)
+    final_time_str = format_time_custom(total_time)
 
     final_text = "🎉 **Türkçe Çeviri Sonuçları**\n\n"
     for col_summary in collections:
