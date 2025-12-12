@@ -12,9 +12,10 @@ from pymongo import MongoClient
 from deep_translator import GoogleTranslator
 import psutil
 
-# NOT: Bu kısımlar sizin ortamınıza göre ayarlanmalıdır.
-# OWNER_ID'yi ortam değişkeninden veya yapılandırmadan alın.
-OWNER_ID = int(os.getenv("OWNER_ID", 12345)) 
+# NOT: 'Backend.helper.custom_filter' modülüne erişimim olmadığı için,
+# 'CustomFilters.owner' yerine basitleştirilmiş bir owner ID kontrolü kullanacağım.
+# Gerçek ortamınızda 'CustomFilters.owner' kullanımına devam edin.
+OWNER_ID = int(os.getenv("OWNER_ID", 12345)) # Ortam değişkeni veya varsayılan ID
 
 # GLOBAL STOP EVENT
 stop_event = asyncio.Event()
@@ -26,9 +27,10 @@ if not db_raw:
 
 db_urls = [u.strip() for u in db_raw.split(",") if u.strip()]
 if len(db_urls) < 2:
-    MONGO_URL = db_urls[0] 
+    # Bu kontrolü basitleştiriyoruz, ikinci URL'ye odaklanalım
+    MONGO_URL = db_urls[0] # İkinci URL yoksa ilkini kullan
 else:
-    MONGO_URL = db_urls[1] 
+    MONGO_URL = db_urls[1] # İkinci URL'yi kullan
 
 try:
     client_db = MongoClient(MONGO_URL)
@@ -44,9 +46,12 @@ def dynamic_config():
     """Çeviri hızını artırmak ve takılmayı azaltmak için optimize edildi."""
     cpu_count = multiprocessing.cpu_count()
     ram_percent = psutil.virtual_memory().percent
-    
+    cpu_percent = psutil.cpu_percent(interval=0.5)
+
+    # Worker sayısı: CPU'yu aşırı yüklememek için limitlendi
     workers = max(1, min(cpu_count, 4)) 
 
+    # Batch boyutu: Daha sık güncelleme için genel olarak küçültüldü
     if ram_percent < 50:
         batch = 50
     elif ram_percent < 75:
@@ -63,6 +68,7 @@ def translate_text_safe(text, cache):
     if text in cache:
         return cache[text]
     try:
+        # Her worker kendi çeviricisini yaratmalı
         tr = GoogleTranslator(source='en', target='tr').translate(text)
     except Exception:
         tr = text
@@ -76,20 +82,9 @@ def progress_bar(current, total, bar_length=12):
     percent = (current / total) * 100
     filled_length = int(bar_length * current // total)
     bar = "⬢" * filled_length + "⬡" * (bar_length - filled_length)
+    # Yüzdeyi 100.00'ü geçmeyecek şekilde sınırla
     percent_display = min(percent, 100.00)
     return f"[{bar}] {percent_display:.2f}%"
-
-# ------------ ETA Formatlayıcı ------------
-def format_time(seconds):
-    """Saniye cinsinden süreyi hh:mm:ss formatına dönüştürür."""
-    if seconds is None or seconds < 0:
-        return "Hesaplanıyor..."
-    
-    seconds = int(seconds)
-    hours, rem = divmod(seconds, 3600)
-    minutes, seconds = divmod(rem, 60)
-    
-    return f"{hours:02d}s {minutes:02d}d {seconds:02d}sn"
 
 # ------------ Worker: batch çevirici ------------
 def translate_batch_worker(batch_data):
@@ -108,16 +103,19 @@ def translate_batch_worker(batch_data):
     results = []
 
     for doc in batch_docs:
+        # Döngü içinde stop kontrolü
         if stop_flag_set:
             break
 
         _id = doc.get("_id")
         upd = {}
 
+        # 1. Açıklama Çevirisi
         desc = doc.get("description")
         if desc:
             upd["description"] = translate_text_safe(desc, CACHE)
 
+        # 2. Sezon/Bölüm Çevirisi (Diziler için)
         seasons = doc.get("seasons")
         if seasons and isinstance(seasons, list):
             modified = False
@@ -127,6 +125,7 @@ def translate_batch_worker(batch_data):
                     if stop_flag_set:
                         break
                     
+                    # Başlık ve Özet çevirisi
                     if "title" in ep and ep["title"]:
                         ep["title"] = translate_text_safe(ep["title"], CACHE)
                         modified = True
@@ -155,10 +154,14 @@ async def handle_stop(callback_query: CallbackQuery):
         pass
 
 # ------------ /cevir Komutu (Sadece owner) ------------
+# Owner filtresinin kodunuzdaki gibi tanımlı olduğunu varsayıyorum.
+# Eğer tanımlı değilse, Pyrogram filters ile değiştirilmelidir.
+# @Client.on_message(filters.command("cevir") & filters.private & CustomFilters.owner) 
 @Client.on_message(filters.command("cevir") & filters.private & filters.user(OWNER_ID)) 
 async def turkce_icerik(client: Client, message: Message):
     global stop_event
     
+    # Eğer önceden başlatılmış bir işlem varsa uyarı ver
     if stop_event.is_set():
          await message.reply_text("⛔ Şu anda devam eden bir işlem var. Lütfen bitmesini veya tamamen iptal olmasını bekleyin.")
          return
@@ -166,7 +169,7 @@ async def turkce_icerik(client: Client, message: Message):
     stop_event.clear()
 
     start_msg = await message.reply_text(
-        "🇹🇷 Türkçe çeviri hazırlanıyor...\nİlerleme tek mesajda gösterilecektir.\n\n_İlk çeviri toplu işi (batch) tamamlanana kadar ilerleme %0.00 ve ETA 'Hesaplanıyor...' görünecektir._",
+        "🇹🇷 Türkçe çeviri hazırlanıyor...\nİlerleme tek mesajda gösterilecektir.\n\n_İlk çeviri toplu işi (batch) tamamlanana kadar ilerleme %0.00 görünebilir._",
         parse_mode=enums.ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
     )
@@ -179,12 +182,14 @@ async def turkce_icerik(client: Client, message: Message):
     for c in collections:
         c["total"] = c["col"].count_documents({})
         if c["total"] == 0:
+            # İşlenecek belge yoksa atla
             c["done"] = c["total"] 
 
     start_time = time.time()
     last_update = 0
-    update_interval = 4 
+    update_interval = 4 # Güncelleme aralığı 4 saniyeye düşürüldü
 
+    # ProcessPoolExecutor'ı koleksiyonlar döngüsünün dışında başlat
     workers, batch_size = dynamic_config()
     pool = ProcessPoolExecutor(max_workers=workers)
     
@@ -208,9 +213,11 @@ async def turkce_icerik(client: Client, message: Message):
                 if stop_event.is_set():
                     break
 
+                # BATCH İŞLEME
                 batch_ids = ids[idx: idx + batch_size]
                 batch_docs = list(col.find({"_id": {"$in": batch_ids}}))
 
+                # Worker'a gönderilecek veri: Belgeler ve durdurma durumu
                 worker_data = {
                     "docs": batch_docs,
                     "stop_flag_set": stop_event.is_set()
@@ -219,22 +226,27 @@ async def turkce_icerik(client: Client, message: Message):
                 try:
                     loop = asyncio.get_event_loop()
                     future = loop.run_in_executor(pool, translate_batch_worker, worker_data)
+                    # Worker'ın bitmesini bekle
                     results = await future 
                 except Exception as e:
+                    # Worker hatası yakalandı
                     print(f"Worker Hatası ({name}): {e}")
                     errors += len(batch_docs)
                     idx += len(batch_ids)
+                    # Hata durumunda bile güncelleme yapıp beklemeye devam et
                     c["errors"] = errors
                     c["done"] = done
                     await asyncio.sleep(1)
                     continue
 
+                # SONUÇLARI VERİTABANINA YAZ
                 for _id, upd in results:
                     if stop_event.is_set():
                         break
                     
                     try:
                         if upd:
+                            # Sadece bir güncelleme varsa yaz
                             col.update_one({"_id": _id}, {"$set": upd})
                         done += 1
                     except Exception as e:
@@ -266,23 +278,11 @@ async def turkce_icerik(client: Client, message: Message):
                         total_all += col_summary['total']
                         total_errors += col_summary['errors']
 
-                    elapsed_time = time.time() - start_time
                     remaining_all = total_all - total_done
-
-                    # ETA Hesaplama
-                    if total_done > 0:
-                        speed = total_done / elapsed_time # Öğe/saniye
-                        eta_seconds = remaining_all / speed
-                        eta_str = format_time(eta_seconds)
-                    else:
-                        eta_str = "Hesaplanıyor..."
-                        
-                    # Geçen süreyi formatla
-                    elapsed_str = format_time(elapsed_time)
+                    elapsed_time = time.time() - start_time
 
                     text += (
-                        f"⏱ Geçen Süre: `{elapsed_str}`\n"
-                        f"⏳ **Tahmini Kalan Süre (ETA)**: `{eta_str}`\n"
+                        f"⏱ Süre: `{round(elapsed_time, 2)}` sn | Kalan toplam: `{remaining_all}`\n"
                         f"💻 CPU: `{cpu}%` | RAM: `{ram_percent}%`"
                     )
 
@@ -293,12 +293,14 @@ async def turkce_icerik(client: Client, message: Message):
                             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
                         )
                     except Exception as e:
+                        # Pyrogram limit hataları bu blokta yakalanır
                         print(f"Telegram Mesaj Güncelleme Hatası: {e}")
                         pass
                     
                     last_update = time.time()
 
     finally:
+        # Hata olsa bile havuzu kapat
         pool.shutdown(wait=False)
 
     # ------------ SONUÇ EKRANI ------------
@@ -308,7 +310,9 @@ async def turkce_icerik(client: Client, message: Message):
     remaining_all = total_all - done_all
 
     total_time = round(time.time() - start_time)
-    total_time_str = format_time(total_time)
+    hours, rem = divmod(total_time, 3600)
+    minutes, seconds = divmod(rem, 60)
+    eta_str = f"{int(hours)}s {int(minutes)}d {int(seconds)}s"
 
     final_text = "🎉 **Türkçe Çeviri Sonuçları**\n\n"
     for col_summary in collections:
@@ -324,12 +328,13 @@ async def turkce_icerik(client: Client, message: Message):
         f"Başarılı    : `{done_all - errors_all}`\n"
         f"Hatalı      : `{errors_all}`\n"
         f"Kalan       : `{remaining_all}`\n"
-        f"Toplam süre  : `{total_time_str}`"
+        f"Toplam süre  : `{eta_str}`"
     )
 
     try:
         await start_msg.edit_text(final_text, parse_mode=enums.ParseMode.MARKDOWN)
     except:
+        # Sonuç ekranı güncellenemezse yut
         pass
 
 # ------------ Callback query handler ------------
