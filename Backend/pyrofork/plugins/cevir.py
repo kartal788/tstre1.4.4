@@ -173,7 +173,7 @@ async def process_collection_parallel(collection, name, message):
         ram_percent = psutil.virtual_memory().percent
         sys_info = f"CPU: {cpu}% | RAM: %{ram_percent}"
 
-        if time.time() - last_update > 30 or idx >= len(ids):
+        if time.time() - last_update > 15 or idx >= len(ids):
             text = (
                 f"{name}: {done}/{total}\n"
                 f"{progress_bar(done, total)}\n\n"
