@@ -90,15 +90,14 @@ def progress_bar(current, total, bar_length=12):
     bar = "⬢" * filled_length + "⬡" * (bar_length - filled_length)
     return f"[{bar}] {percent:.2f}%"
 
-# ------------ Worker: batch çevirici (API limiti ile) ------------
-def translate_batch_worker(batch, stop_flag, max_api_per_batch=20):
+# ------------ Worker: batch çevirici (limit kaldırıldı) ------------
+def translate_batch_worker(batch, stop_flag):
     CACHE = {}
     results = []
     last_translated_batch = []
 
-    processed_count = 0
     for doc in batch:
-        if stop_flag.is_set() or processed_count >= max_api_per_batch:
+        if stop_flag.is_set():
             break
 
         _id = doc.get("_id")
@@ -108,12 +107,7 @@ def translate_batch_worker(batch, stop_flag, max_api_per_batch=20):
         desc = doc.get("description")
         if desc:
             upd["description"] = translate_text_safe(desc, CACHE)
-            processed_count += 1
-            # Film adı ekle
             last_translated_batch.append(doc.get("title", "Unknown"))
-            if processed_count >= max_api_per_batch:
-                results.append((_id, upd, last_translated_batch))
-                break
 
         # Dizilerde sezon ve bölüm
         seasons = doc.get("seasons")
@@ -122,23 +116,18 @@ def translate_batch_worker(batch, stop_flag, max_api_per_batch=20):
             for season in seasons:
                 eps = season.get("episodes", []) or []
                 for ep in eps:
-                    if stop_flag.is_set() or processed_count >= max_api_per_batch:
+                    if stop_flag.is_set():
                         break
                     ep_title = ep.get("title")
                     ep_number = ep.get("episode_number", "")
                     season_number = season.get("season_number", "")
                     if ep_title:
                         ep["title"] = translate_text_safe(ep_title, CACHE)
-                        processed_count += 1
-                        # Örnek: Lost S02E01
                         formatted_name = f"{doc.get('title','Unknown')} S{season_number:02}E{ep_number:02}"
                         last_translated_batch.append(formatted_name)
                     if "overview" in ep and ep["overview"]:
                         ep["overview"] = translate_text_safe(ep["overview"], CACHE)
-                        processed_count += 1
                     modified = True
-                    if processed_count >= max_api_per_batch:
-                        break
             if modified:
                 upd["seasons"] = seasons
 
@@ -159,7 +148,7 @@ async def safe_edit_text(message, text, reply_markup=None):
             break
 
 # ------------ Paralel koleksiyon işleyici ------------
-async def process_collection_parallel(collection, name, message, max_api_per_batch=20):
+async def process_collection_parallel(collection, name, message):
     loop = asyncio.get_event_loop()
     total = collection.count_documents({})
     done = 0
@@ -180,12 +169,12 @@ async def process_collection_parallel(collection, name, message, max_api_per_bat
             break
 
         batch_ids = ids[idx: idx + batch_size]
-        batch_docs = list(collection.find({"_id": {"_id": {"$in": batch_ids}}}))
+        batch_docs = list(collection.find({"_id": {"$in": batch_ids}}))
         if not batch_docs:
             break
 
         try:
-            future = loop.run_in_executor(pool, translate_batch_worker, batch_docs, stop_event, max_api_per_batch)
+            future = loop.run_in_executor(pool, translate_batch_worker, batch_docs, stop_event)
             results = await future
         except Exception:
             errors += len(batch_docs)
@@ -264,11 +253,11 @@ async def turkce_icerik(client: Client, message: Message):
     )
 
     movie_total, movie_done, movie_errors, movie_time = await process_collection_parallel(
-        movie_col, "Filmler", start_msg, max_api_per_batch=20
+        movie_col, "Filmler", start_msg
     )
 
     series_total, series_done, series_errors, series_time = await process_collection_parallel(
-        series_col, "Diziler", start_msg, max_api_per_batch=20
+        series_col, "Diziler", start_msg
     )
 
     total_all = movie_total + series_total
