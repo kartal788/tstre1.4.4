@@ -11,7 +11,7 @@ import math
 import os
 from pyrogram.errors import FloodWait
 
-from Backend.helper.custom_filter import CustomFilters  # Owner filtresi için
+from Backend.helper.custom_filter import CustomFilters
 
 # GLOBAL STOP EVENT
 stop_event = asyncio.Event()
@@ -36,7 +36,7 @@ series_col = db["tv"]
 translator = GoogleTranslator(source='en', target='tr')
 
 # ------------ Dinamik Worker & Batch Ayarı ------------
-def dynamic_config():
+def dynamic_config(collection_type="general"):
     cpu_count = multiprocessing.cpu_count()
     ram_percent = psutil.virtual_memory().percent
     cpu_percent = psutil.cpu_percent(interval=None)
@@ -48,14 +48,24 @@ def dynamic_config():
     else:
         workers = 1
 
-    if ram_percent < 40:
-        batch = 80
-    elif ram_percent < 60:
-        batch = 40
-    elif ram_percent < 75:
-        batch = 20
+    # Filmler ve Diziler için ayrı batch
+    if collection_type == "Filmler":
+        if ram_percent < 60:
+            batch = 40
+        else:
+            batch = 20
+    elif collection_type == "Diziler":
+        if ram_percent < 60:
+            batch = 20
+        else:
+            batch = 10
     else:
-        batch = 10
+        if ram_percent < 40:
+            batch = 40
+        elif ram_percent < 60:
+            batch = 20
+        else:
+            batch = 10
 
     return workers, batch, cpu_percent, ram_percent
 
@@ -135,10 +145,7 @@ def generate_progress_text(progress_data):
     for name, data in progress_data.items():
         elapsed_sec = max(1, sum(int(x) * t for x, t in zip([3600, 60, 1], map(int, data['elapsed'].split(":")))))
         speed = data['done'] / elapsed_sec if elapsed_sec > 0 else 0
-
-        # Bar her zaman gösterilecek
         progress_line = f"{progress_bar(data['done'], data['total'])}\n"
-
         text += (
             f"📌 {name}: {data['done']}/{data['total']}\n"
             f"{progress_line}"
@@ -148,7 +155,7 @@ def generate_progress_text(progress_data):
         )
     return text
 
-# ------------ Paralel koleksiyon işleyici ------------
+# ------------ Paralel koleksiyon işleyici (15s garantili güncelleme) ------------
 async def process_collection_parallel(collection, name, message, progress_data):
     loop = asyncio.get_event_loop()
     total = collection.count_documents({})
@@ -161,7 +168,7 @@ async def process_collection_parallel(collection, name, message, progress_data):
     ids = [d["_id"] for d in ids_cursor]
 
     idx = 0
-    workers, batch_size, _, _ = dynamic_config()
+    workers, batch_size, _, _ = dynamic_config(name)
     pool = ProcessPoolExecutor(max_workers=workers)
 
     while idx < len(ids):
@@ -173,6 +180,7 @@ async def process_collection_parallel(collection, name, message, progress_data):
         if not batch_docs:
             break
 
+        batch_start = time.time()
         try:
             future = loop.run_in_executor(pool, translate_batch_worker, batch_docs, stop_event)
             results = await future
@@ -192,37 +200,31 @@ async def process_collection_parallel(collection, name, message, progress_data):
             except Exception:
                 errors += 1
 
+            # 15 saniyede bir mesaj güncelle
+            if time.time() - last_update > 15:
+                elapsed = time.time() - start_time
+                remaining = total - done
+                eta = remaining / (done / elapsed) if done > 0 else float("inf")
+                eta_str = time.strftime("%H:%M:%S", time.gmtime(eta)) if math.isfinite(eta) else "∞"
+                elapsed_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
+                _, _, cpu_percent, ram_percent = dynamic_config(name)
+                progress_data[name] = {
+                    "done": done,
+                    "total": total,
+                    "errors": errors,
+                    "elapsed": elapsed_str,
+                    "eta": eta_str,
+                    "cpu": cpu_percent,
+                    "ram": ram_percent,
+                    "workers": workers,
+                    "batch": batch_size
+                }
+                text = generate_progress_text(progress_data)
+                await safe_edit_message(message, text,
+                                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]]))
+                last_update = time.time()
+
         idx += len(batch_ids)
-
-        elapsed = time.time() - start_time
-        remaining = total - done
-        eta = remaining / (done / elapsed) if done > 0 else float("inf")
-        eta_str = time.strftime("%H:%M:%S", time.gmtime(eta)) if math.isfinite(eta) else "∞"
-        elapsed_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
-
-        _, _, cpu_percent, ram_percent = dynamic_config()
-
-        progress_data[name] = {
-            "done": done,
-            "total": total,
-            "errors": errors,
-            "elapsed": elapsed_str,
-            "eta": eta_str,
-            "cpu": cpu_percent,
-            "ram": ram_percent,
-            "workers": workers,
-            "batch": batch_size
-        }
-
-        # Mesaj güncelleme süresi 15 saniye
-        if time.time() - last_update > 15 or idx >= len(ids):
-            text = generate_progress_text(progress_data)
-            await safe_edit_message(
-                message,
-                text,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
-            )
-            last_update = time.time()
 
     pool.shutdown(wait=False)
     elapsed_time = round(time.time() - start_time, 2)
@@ -246,7 +248,6 @@ async def turkce_icerik(client: Client, message: Message):
     global stop_event
     stop_event.clear()
 
-    # Başlangıç progress_data
     progress_data = {
         "Filmler": {"done": 0, "total": movie_col.count_documents({}), "errors": 0, "elapsed": "00:00:00", "eta": "∞",
                     "cpu": 0, "ram": 0, "workers": 0, "batch": 0},
@@ -254,7 +255,6 @@ async def turkce_icerik(client: Client, message: Message):
                     "cpu": 0, "ram": 0, "workers": 0, "batch": 0}
     }
 
-    # İlk mesaj gönderiliyor
     start_msg = await message.reply_text(
         generate_progress_text(progress_data),
         parse_mode=enums.ParseMode.MARKDOWN,
