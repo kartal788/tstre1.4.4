@@ -94,7 +94,7 @@ def progress_bar(current, total, bar_length=12):
 def translate_batch_worker(batch, stop_flag, max_api_per_batch=20):
     CACHE = {}
     results = []
-    last_translated = []
+    last_translated_batch = []
 
     processed_count = 0
     for doc in batch:
@@ -104,15 +104,18 @@ def translate_batch_worker(batch, stop_flag, max_api_per_batch=20):
         _id = doc.get("_id")
         upd = {}
 
+        # Film description
         desc = doc.get("description")
         if desc:
             upd["description"] = translate_text_safe(desc, CACHE)
             processed_count += 1
-            last_translated.append(desc)
+            # Film adı ekle
+            last_translated_batch.append(doc.get("title", "Unknown"))
             if processed_count >= max_api_per_batch:
-                results.append((_id, upd, last_translated))
+                results.append((_id, upd, last_translated_batch))
                 break
 
+        # Dizilerde sezon ve bölüm
         seasons = doc.get("seasons")
         if seasons and isinstance(seasons, list):
             modified = False
@@ -121,12 +124,16 @@ def translate_batch_worker(batch, stop_flag, max_api_per_batch=20):
                 for ep in eps:
                     if stop_flag.is_set() or processed_count >= max_api_per_batch:
                         break
-                    if "title" in ep and ep["title"]:
-                        last_translated.append(ep["title"])
-                        ep["title"] = translate_text_safe(ep["title"], CACHE)
+                    ep_title = ep.get("title")
+                    ep_number = ep.get("episode_number", "")
+                    season_number = season.get("season_number", "")
+                    if ep_title:
+                        ep["title"] = translate_text_safe(ep_title, CACHE)
                         processed_count += 1
+                        # Örnek: Lost S02E01
+                        formatted_name = f"{doc.get('title','Unknown')} S{season_number:02}E{ep_number:02}"
+                        last_translated_batch.append(formatted_name)
                     if "overview" in ep and ep["overview"]:
-                        last_translated.append(ep["overview"])
                         ep["overview"] = translate_text_safe(ep["overview"], CACHE)
                         processed_count += 1
                     modified = True
@@ -135,8 +142,8 @@ def translate_batch_worker(batch, stop_flag, max_api_per_batch=20):
             if modified:
                 upd["seasons"] = seasons
 
-        results.append((_id, upd, last_translated))
-        last_translated = []
+        results.append((_id, upd, last_translated_batch))
+        last_translated_batch = []
 
     return results
 
@@ -173,7 +180,7 @@ async def process_collection_parallel(collection, name, message, max_api_per_bat
             break
 
         batch_ids = ids[idx: idx + batch_size]
-        batch_docs = list(collection.find({"_id": {"$in": batch_ids}}))
+        batch_docs = list(collection.find({"_id": {"_id": {"$in": batch_ids}}}))
         if not batch_docs:
             break
 
