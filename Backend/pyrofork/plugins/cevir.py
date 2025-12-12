@@ -39,7 +39,7 @@ translator = GoogleTranslator(source='en', target='tr')
 def dynamic_config():
     cpu_count = multiprocessing.cpu_count()
     ram_percent = psutil.virtual_memory().percent
-    cpu_percent = psutil.cpu_percent(interval=None)  # Daha doğru anlık değer
+    cpu_percent = psutil.cpu_percent(interval=None)
 
     if cpu_percent < 30:
         workers = min(cpu_count * 2, 16)
@@ -72,7 +72,7 @@ def translate_text_safe(text, cache):
     cache[text] = tr
     return tr
 
-# ------------ Progress Bar ------------
+# ------------ Progress Bar (her zaman gösterilecek) ------------
 def progress_bar(current, total, bar_length=12):
     if total == 0:
         return "[⬡" + "⬡"*(bar_length-1) + "] 0.00%"
@@ -135,8 +135,10 @@ def generate_progress_text(progress_data):
     for name, data in progress_data.items():
         elapsed_sec = max(1, sum(int(x) * t for x, t in zip([3600, 60, 1], map(int, data['elapsed'].split(":")))))
         speed = data['done'] / elapsed_sec if elapsed_sec > 0 else 0
+
         # Bar her zaman gösterilecek
         progress_line = f"{progress_bar(data['done'], data['total'])}\n"
+
         text += (
             f"📌 {name}: {data['done']}/{data['total']}\n"
             f"{progress_line}"
