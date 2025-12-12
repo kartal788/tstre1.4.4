@@ -9,13 +9,14 @@ import psutil
 import time
 import math
 import os
+from pyrogram.errors import FloodWait
 
 from Backend.helper.custom_filter import CustomFilters  # Owner filtresi için
 
 # GLOBAL STOP EVENT
 stop_event = asyncio.Event()
 
-# ------------ DATABASE Bağlantısı (Sadece ortam değişkeni) ------------
+# ------------ DATABASE Bağlantısı ------------
 db_raw = os.getenv("DATABASE", "")
 if not db_raw:
     raise Exception("DATABASE ortam değişkeni bulunamadı!")
@@ -117,6 +118,30 @@ def translate_batch_worker(batch, stop_flag):
 
     return results
 
+# ------------ FloodWait güvenli mesaj güncelleme ------------
+async def safe_edit_message(message, text, reply_markup=None):
+    while True:
+        try:
+            await message.edit_text(text, reply_markup=reply_markup)
+            break
+        except FloodWait as e:
+            await asyncio.sleep(e.value)
+        except Exception:
+            break
+
+# ------------ İlerleme mesajı oluşturma ------------
+def generate_progress_text(progress_data):
+    text = "🇹🇷 Türkçe çeviri ilerlemesi\n\n"
+    for name, data in progress_data.items():
+        text += (
+            f"📌 {name}: {data['done']}/{data['total']}\n"
+            f"{progress_bar(data['done'], data['total'])}\n"
+            f"Kalan: {data['total'] - data['done']}, Hatalar: {data['errors']}\n"
+            f"Süre: {data['elapsed']} | ETA: {data['eta']}\n"
+            f"CPU: {data['cpu']}% | RAM: {data['ram']}% | Workers: {data['workers']} | Batch: {data['batch']}\n\n"
+        )
+    return text
+
 # ------------ Paralel koleksiyon işleyici ------------
 async def process_collection_parallel(collection, name, message, progress_data):
     loop = asyncio.get_event_loop()
@@ -185,33 +210,19 @@ async def process_collection_parallel(collection, name, message, progress_data):
             "batch": batch_size
         }
 
-        if time.time() - last_update > 5 or idx >= len(ids):
+        # Mesaj güncelleme süresi artık 15 saniye
+        if time.time() - last_update > 15 or idx >= len(ids):
             text = generate_progress_text(progress_data)
-            try:
-                await message.edit_text(
-                    text,
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
-                )
-            except:
-                pass
+            await safe_edit_message(
+                message,
+                text,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
+            )
             last_update = time.time()
 
     pool.shutdown(wait=False)
     elapsed_time = round(time.time() - start_time, 2)
     return total, done, errors, elapsed_time
-
-# ------------ İlerleme mesajı oluşturma ------------
-def generate_progress_text(progress_data):
-    text = "🇹🇷 Türkçe çeviri ilerlemesi\n\n"
-    for name, data in progress_data.items():
-        text += (
-            f"📌 {name}: {data['done']}/{data['total']}\n"
-            f"{progress_bar(data['done'], data['total'])}\n"
-            f"Kalan: {data['total'] - data['done']}, Hatalar: {data['errors']}\n"
-            f"Süre: {data['elapsed']} | ETA: {data['eta']}\n"
-            f"CPU: {data['cpu']}% | RAM: {data['ram']}% | Workers: {data['workers']} | Batch: {data['batch']}\n\n"
-        )
-    return text
 
 # ------------ Callback: iptal butonu ------------
 async def handle_stop(callback_query: CallbackQuery):
@@ -225,7 +236,7 @@ async def handle_stop(callback_query: CallbackQuery):
     except:
         pass
 
-# ------------ /cevir Komutu (Sadece owner) ------------
+# ------------ /cevir Komutu ------------
 @Client.on_message(filters.command("cevir") & filters.private & CustomFilters.owner)
 async def turkce_icerik(client: Client, message: Message):
     global stop_event
