@@ -135,14 +135,12 @@ async def turkce_icerik(client: Client, message: Message):
     global stop_event
     stop_event.clear()
 
-    # Başlangıç mesajı (tek mesaj)
     start_msg = await message.reply_text(
         "🇹🇷 Türkçe çeviri hazırlanıyor...\nİlerleme tek mesajda gösterilecektir.",
         parse_mode=enums.ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
     )
 
-    # Koleksiyonlar ve sayaçları
     collections = [
         {"col": movie_col, "name": "Filmler", "total": 0, "done": 0, "errors": 0},
         {"col": series_col, "name": "Diziler", "total": 0, "done": 0, "errors": 0}
@@ -153,9 +151,8 @@ async def turkce_icerik(client: Client, message: Message):
 
     start_time = time.time()
     last_update = 0
-    update_interval = 5  # 5 saniyede bir güncelle
+    update_interval = 5
 
-    # Koleksiyonları sırayla çevir
     for c in collections:
         col = c["col"]
         name = c["name"]
@@ -176,8 +173,6 @@ async def turkce_icerik(client: Client, message: Message):
 
             batch_ids = ids[idx: idx + batch_size]
             batch_docs = list(col.find({"_id": {"$in": batch_ids}}))
-            if not batch_docs:
-                break
 
             try:
                 loop = asyncio.get_event_loop()
@@ -191,24 +186,21 @@ async def turkce_icerik(client: Client, message: Message):
 
             for _id, upd in results:
                 try:
-                    if stop_event.is_set():
-                        break
                     if upd:
                         col.update_one({"_id": _id}, {"$set": upd})
                     done += 1
-                except Exception:
+                except:
                     errors += 1
 
             idx += len(batch_ids)
             c["done"] = done
             c["errors"] = errors
 
-            # Tek mesaj güncellemesi
+            # 🔥 Tek Mesaj Güncellemesi (Hatalar toplam: kaldırıldı)
             if time.time() - last_update > update_interval or idx >= len(ids):
                 text = ""
                 total_done = 0
                 total_all = 0
-                total_errors = 0
 
                 cpu = psutil.cpu_percent(interval=None)
                 ram_percent = psutil.virtual_memory().percent
@@ -217,16 +209,16 @@ async def turkce_icerik(client: Client, message: Message):
                     text += (
                         f"📌 {col_summary['name']}: {col_summary['done']}/{col_summary['total']}\n"
                         f"{progress_bar(col_summary['done'], col_summary['total'])}\n"
-                        f"Kalan: {col_summary['total'] - col_summary['done']}, Hatalar: {col_summary['errors']}\n\n"
+                        f"Kalan: {col_summary['total'] - col_summary['done']}\n\n"
                     )
                     total_done += col_summary['done']
                     total_all += col_summary['total']
-                    total_errors += col_summary['errors']
 
                 remaining_all = total_all - total_done
                 elapsed_time = time.time() - start_time
+
                 text += (
-                    f"⏱ Süre: {round(elapsed_time,2)} sn | Kalan toplam: {remaining_all} | Hatalar toplam: {total_errors}\n"
+                    f"⏱ Süre: {round(elapsed_time,2)} sn | Kalan toplam: {remaining_all}\n"
                     f"💻 CPU: {cpu}% | RAM: {ram_percent}%"
                 )
 
@@ -241,8 +233,9 @@ async def turkce_icerik(client: Client, message: Message):
 
         pool.shutdown(wait=False)
 
-    # Sonuç ekranı
+    # ------------ SONUÇ EKRANI ------------
     final_text = "🎉 Türkçe Çeviri Sonuçları\n\n"
+
     for col_summary in collections:
         final_text += (
             f"📌 {col_summary['name']}: {col_summary['done']}/{col_summary['total']}\n"
@@ -250,12 +243,12 @@ async def turkce_icerik(client: Client, message: Message):
             f"Kalan: {col_summary['total'] - col_summary['done']}, Hatalar: {col_summary['errors']}\n\n"
         )
 
-    # Genel özet
     total_all = sum(c["total"] for c in collections)
     done_all = sum(c["done"] for c in collections)
     errors_all = sum(c["errors"] for c in collections)
     remaining_all = total_all - done_all
-    total_time = round(time.time() - start_time, 2)
+
+    total_time = round(time.time() - start_time)
     hours, rem = divmod(total_time, 3600)
     minutes, seconds = divmod(rem, 60)
     eta_str = f"{int(hours)}s{int(minutes)}d{int(seconds)}s"
