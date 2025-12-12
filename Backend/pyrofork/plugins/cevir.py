@@ -7,13 +7,12 @@ import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 import psutil
 import time
-import math
 import os
 
 from Backend.helper.custom_filter import CustomFilters  # Owner filtresi için
 
-# GLOBAL STOP EVENT
-stop_event = asyncio.Event()
+# GLOBAL STOP EVENT (multiprocessing.Event ile uyumlu)
+stop_event = multiprocessing.Event()
 
 # ------------ DATABASE Bağlantısı ------------
 db_raw = os.getenv("DATABASE", "")
@@ -92,10 +91,12 @@ def translate_batch_worker(batch, stop_flag):
         _id = doc.get("_id")
         upd = {}
 
+        # Description
         desc = doc.get("description")
         if desc:
             upd["description"] = translate_text_safe(desc, CACHE)
 
+        # Seasons / Episodes
         seasons = doc.get("seasons")
         if seasons and isinstance(seasons, list):
             modified = False
@@ -188,7 +189,7 @@ async def turkce_icerik(client: Client, message: Message):
                 try:
                     if upd:
                         col.update_one({"_id": _id}, {"$set": upd})
-                    done += 1
+                    done += 1  # artık her doküman için artırılıyor
                 except:
                     errors += 1
 
@@ -196,7 +197,7 @@ async def turkce_icerik(client: Client, message: Message):
             c["done"] = done
             c["errors"] = errors
 
-            # 🔥 Tek Mesaj Güncellemesi (Hatalar toplam: kaldırıldı)
+            # 🔥 Tek Mesaj Güncellemesi
             if time.time() - last_update > update_interval or idx >= len(ids):
                 text = ""
                 total_done = 0
