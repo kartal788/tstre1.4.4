@@ -1,7 +1,86 @@
+import asyncio
+import os
+import time
+import psutil
 import multiprocessing
+from concurrent.futures import ProcessPoolExecutor
+
+from pyrogram import filters, enums
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+
+from pymongo import MongoClient
+from deep_translator import GoogleTranslator
+
+from Backend.helper.custom_filter import CustomFilters
+from Backend import StreamBot  # Bot instance’ınız
 
 # GLOBAL STOP EVENT (multiprocessing uyumlu)
 stop_event = multiprocessing.Event()
+
+# ------------ DATABASE Bağlantısı ------------
+db_raw = os.getenv("DATABASE", "")
+if not db_raw:
+    raise Exception("DATABASE ortam değişkeni bulunamadı!")
+
+db_urls = [u.strip() for u in db_raw.split(",") if u.strip()]
+if len(db_urls) < 2:
+    raise Exception("İkinci DATABASE bulunamadı!")
+
+MONGO_URL = db_urls[1]
+client_db = MongoClient(MONGO_URL)
+db_name = client_db.list_database_names()[0]
+db = client_db[db_name]
+
+movie_col = db["movie"]
+series_col = db["tv"]
+
+translator = GoogleTranslator(source='en', target='tr')
+
+# ------------ Dinamik Worker & Batch Ayarı ------------
+def dynamic_config():
+    cpu_count = multiprocessing.cpu_count()
+    ram_percent = psutil.virtual_memory().percent
+    cpu_percent = psutil.cpu_percent(interval=0.5)
+
+    if cpu_percent < 30:
+        workers = min(cpu_count * 2, 16)
+    elif cpu_percent < 60:
+        workers = max(1, cpu_count)
+    else:
+        workers = 1
+
+    if ram_percent < 40:
+        batch = 80
+    elif ram_percent < 60:
+        batch = 40
+    elif ram_percent < 75:
+        batch = 20
+    else:
+        batch = 10
+
+    return workers, batch
+
+# ------------ Güvenli Çeviri Fonksiyonu ------------
+def translate_text_safe(text, cache):
+    if not text or str(text).strip() == "":
+        return ""
+    if text in cache:
+        return cache[text]
+    try:
+        tr = translator.translate(text)
+    except Exception:
+        tr = text
+    cache[text] = tr
+    return tr
+
+# ------------ Progress Bar ------------
+def progress_bar(current, total, bar_length=12):
+    if total == 0:
+        return "[⬡" + "⬡"*(bar_length-1) + "] 0.00%"
+    percent = (current / total) * 100
+    filled_length = int(bar_length * current // total)
+    bar = "⬢" * filled_length + "⬡" * (bar_length - filled_length)
+    return f"[{bar}] {percent:.2f}%"
 
 # ------------ Worker: batch çevirici ------------
 def translate_batch_worker(batch, stop_flag):
@@ -21,7 +100,6 @@ def translate_batch_worker(batch, stop_flag):
 
         seasons = doc.get("seasons")
         if seasons and isinstance(seasons, list):
-            modified = False
             for season in seasons:
                 eps = season.get("episodes", []) or []
                 for ep in eps:
@@ -29,20 +107,30 @@ def translate_batch_worker(batch, stop_flag):
                         break
                     if "title" in ep and ep["title"]:
                         ep["title"] = translate_text_safe(ep["title"], CACHE)
-                        modified = True
                     if "overview" in ep and ep["overview"]:
                         ep["overview"] = translate_text_safe(ep["overview"], CACHE)
-                        modified = True
-            # Sezonları her durumda ekle (boş olsa da) ki update çalışsın
+            # Sezonları her durumda ekle ki update çalışsın
             upd["seasons"] = seasons
 
         results.append((_id, upd))
 
     return results
 
+# ------------ Callback: iptal butonu ------------
+async def handle_stop(callback_query: CallbackQuery):
+    stop_event.set()
+    try:
+        await callback_query.message.edit_text("⛔ İşlem iptal edildi!")
+    except:
+        pass
+    try:
+        await callback_query.answer("Durdurma talimatı alındı.")
+    except:
+        pass
+
 # ------------ /cevir Komutu (Sadece owner) ------------
-@Client.on_message(filters.command("cevir") & filters.private & CustomFilters.owner)
-async def turkce_icerik(client: Client, message: Message):
+@StreamBot.on_message(filters.command("cevir") & filters.private & CustomFilters.owner)
+async def turkce_icerik(client: StreamBot, message: Message):
     global stop_event
     stop_event.clear()
 
@@ -76,7 +164,7 @@ async def turkce_icerik(client: Client, message: Message):
 
         idx = 0
         workers, batch_size = dynamic_config()
-        batch_size = min(batch_size, 20)  # güvenli batch boyutu
+        batch_size = min(batch_size, 20)
         pool = multiprocessing.get_context("spawn").Pool(workers)
 
         while idx < len(ids):
@@ -177,3 +265,9 @@ async def turkce_icerik(client: Client, message: Message):
         await start_msg.edit_text(final_text)
     except:
         pass
+
+# ------------ Callback query handler ------------
+@StreamBot.on_callback_query()
+async def _cb(client: StreamBot, query: CallbackQuery):
+    if query.data == "stop":
+        await handle_stop(query)
