@@ -1,21 +1,19 @@
 import asyncio
-import os
-import time
-import psutil
-import multiprocessing
-from concurrent.futures import ProcessPoolExecutor
-
-from pyrogram import filters, enums
+from pyrogram import Client, filters, enums
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-
 from pymongo import MongoClient
 from deep_translator import GoogleTranslator
+import multiprocessing
+from concurrent.futures import ProcessPoolExecutor
+import psutil
+import time
+import math
+import os
 
-from Backend.helper.custom_filter import CustomFilters
-from Backend import StreamBot  # Bot instance’ınız
+from Backend.helper.custom_filter import CustomFilters  # Owner filtresi için
 
-# GLOBAL STOP EVENT (multiprocessing uyumlu)
-stop_event = multiprocessing.Event()
+# GLOBAL STOP EVENT
+stop_event = asyncio.Event()
 
 # ------------ DATABASE Bağlantısı ------------
 db_raw = os.getenv("DATABASE", "")
@@ -67,7 +65,7 @@ def translate_text_safe(text, cache):
     if text in cache:
         return cache[text]
     try:
-        tr = translator.translate(text)
+        tr = GoogleTranslator(source='en', target='tr').translate(text)
     except Exception:
         tr = text
     cache[text] = tr
@@ -100,6 +98,7 @@ def translate_batch_worker(batch, stop_flag):
 
         seasons = doc.get("seasons")
         if seasons and isinstance(seasons, list):
+            modified = False
             for season in seasons:
                 eps = season.get("episodes", []) or []
                 for ep in eps:
@@ -107,10 +106,12 @@ def translate_batch_worker(batch, stop_flag):
                         break
                     if "title" in ep and ep["title"]:
                         ep["title"] = translate_text_safe(ep["title"], CACHE)
+                        modified = True
                     if "overview" in ep and ep["overview"]:
                         ep["overview"] = translate_text_safe(ep["overview"], CACHE)
-            # Sezonları her durumda ekle ki update çalışsın
-            upd["seasons"] = seasons
+                        modified = True
+            if modified:
+                upd["seasons"] = seasons
 
         results.append((_id, upd))
 
@@ -129,8 +130,8 @@ async def handle_stop(callback_query: CallbackQuery):
         pass
 
 # ------------ /cevir Komutu (Sadece owner) ------------
-@StreamBot.on_message(filters.command("cevir") & filters.private & CustomFilters.owner)
-async def turkce_icerik(client: StreamBot, message: Message):
+@Client.on_message(filters.command("cevir") & filters.private & CustomFilters.owner)
+async def turkce_icerik(client: Client, message: Message):
     global stop_event
     stop_event.clear()
 
@@ -150,7 +151,7 @@ async def turkce_icerik(client: StreamBot, message: Message):
 
     start_time = time.time()
     last_update = 0
-    update_interval = 3  # daha sık güncelleme
+    update_interval = 5
 
     for c in collections:
         col = c["col"]
@@ -164,8 +165,7 @@ async def turkce_icerik(client: StreamBot, message: Message):
 
         idx = 0
         workers, batch_size = dynamic_config()
-        batch_size = min(batch_size, 20)
-        pool = multiprocessing.get_context("spawn").Pool(workers)
+        pool = ProcessPoolExecutor(max_workers=workers)
 
         while idx < len(ids):
             if stop_event.is_set():
@@ -175,7 +175,9 @@ async def turkce_icerik(client: StreamBot, message: Message):
             batch_docs = list(col.find({"_id": {"$in": batch_ids}}))
 
             try:
-                results = pool.apply(translate_batch_worker, args=(batch_docs, stop_event))
+                loop = asyncio.get_event_loop()
+                future = loop.run_in_executor(pool, translate_batch_worker, batch_docs, stop_event)
+                results = await future
             except Exception:
                 errors += len(batch_docs)
                 idx += len(batch_ids)
@@ -186,7 +188,7 @@ async def turkce_icerik(client: StreamBot, message: Message):
                 try:
                     if upd:
                         col.update_one({"_id": _id}, {"$set": upd})
-                    done += 1  # her doküman için done artır
+                    done += 1
                 except:
                     errors += 1
 
@@ -194,7 +196,7 @@ async def turkce_icerik(client: StreamBot, message: Message):
             c["done"] = done
             c["errors"] = errors
 
-            # Tek Mesaj Güncellemesi
+            # 🔥 Tek Mesaj Güncellemesi (Hatalar toplam: kaldırıldı)
             if time.time() - last_update > update_interval or idx >= len(ids):
                 text = ""
                 total_done = 0
@@ -229,8 +231,7 @@ async def turkce_icerik(client: StreamBot, message: Message):
                     pass
                 last_update = time.time()
 
-        pool.close()
-        pool.join()
+        pool.shutdown(wait=False)
 
     # ------------ SONUÇ EKRANI ------------
     final_text = "🎉 Türkçe Çeviri Sonuçları\n\n"
@@ -267,7 +268,7 @@ async def turkce_icerik(client: StreamBot, message: Message):
         pass
 
 # ------------ Callback query handler ------------
-@StreamBot.on_callback_query()
-async def _cb(client: StreamBot, query: CallbackQuery):
+@Client.on_callback_query()
+async def _cb(client: Client, query: CallbackQuery):
     if query.data == "stop":
         await handle_stop(query)
