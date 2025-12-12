@@ -15,7 +15,7 @@ from Backend.helper.custom_filter import CustomFilters
 
 stop_event = asyncio.Event()
 
-# ------------ DATABASE ------------
+# DATABASE
 db_raw = os.getenv("DATABASE", "")
 if not db_raw:
     raise Exception("DATABASE ortam değişkeni bulunamadı!")
@@ -34,27 +34,26 @@ series_col = db["tv"]
 
 translator = GoogleTranslator(source='en', target='tr')
 
+# DYNAMIC CONFIG
 def dynamic_config(collection_type="general"):
     cpu_count = multiprocessing.cpu_count()
     ram_percent = psutil.virtual_memory().percent
     cpu_percent = psutil.cpu_percent(interval=None)
-
     if cpu_percent < 30:
         workers = min(cpu_count * 2, 16)
     elif cpu_percent < 60:
         workers = max(1, cpu_count)
     else:
         workers = 1
-
     if collection_type == "Filmler":
         batch = 40 if ram_percent < 60 else 20
     elif collection_type == "Diziler":
         batch = 20 if ram_percent < 60 else 10
     else:
         batch = 20
-
     return workers, batch, cpu_percent, ram_percent
 
+# SAFE TRANSLATE
 def translate_text_safe(text, cache):
     if not text or str(text).strip() == "":
         return ""
@@ -67,6 +66,7 @@ def translate_text_safe(text, cache):
     cache[text] = tr
     return tr
 
+# PROGRESS BAR
 def progress_bar(current, total, bar_length=12):
     if total == 0:
         return "[⬡" + "⬡"*(bar_length-1) + "] 0.00%"
@@ -75,6 +75,7 @@ def progress_bar(current, total, bar_length=12):
     bar = "⬢" * filled_length + "⬡" * (bar_length - filled_length)
     return f"[{bar}] {percent:.2f}%"
 
+# BATCH WORKER
 def translate_batch_worker(batch, stop_flag):
     CACHE = {}
     results = []
@@ -105,6 +106,7 @@ def translate_batch_worker(batch, stop_flag):
         results.append((_id, upd))
     return results
 
+# SAFE EDIT
 async def safe_edit_message(message, text, reply_markup=None):
     while True:
         try:
@@ -115,6 +117,7 @@ async def safe_edit_message(message, text, reply_markup=None):
         except Exception:
             break
 
+# GENERATE PROGRESS TEXT
 def generate_progress_text(progress_data, elapsed_str):
     text = "🇹🇷 Türkçe çeviri ilerlemesi\n\n"
     for name, data in progress_data.items():
@@ -130,6 +133,7 @@ def generate_progress_text(progress_data, elapsed_str):
     text += f"CPU: {progress_data['Filmler']['cpu']}% | RAM: {progress_data['Filmler']['ram']}% | Workers: {progress_data['Filmler']['workers']} | Batch: {progress_data['Filmler']['batch']}"
     return text
 
+# FINAL SUMMARY
 def generate_final_summary(progress_data, elapsed_seconds):
     hours, rem = divmod(int(elapsed_seconds), 3600)
     minutes, seconds = divmod(rem, 60)
@@ -141,7 +145,6 @@ def generate_final_summary(progress_data, elapsed_seconds):
     remaining_all = total_all - done_all
 
     text = "🎉 Türkçe Çeviri Sonuçları\n\n"
-
     for name in ["Filmler","Diziler"]:
         data = progress_data[name]
         text += (
@@ -160,6 +163,7 @@ def generate_final_summary(progress_data, elapsed_seconds):
     )
     return text
 
+# PROCESS COLLECTION
 async def process_collection_parallel(collection, name, message, progress_data, last_text_holder, start_time):
     loop = asyncio.get_event_loop()
     total = collection.count_documents({})
@@ -198,7 +202,7 @@ async def process_collection_parallel(collection, name, message, progress_data, 
                     collection.update_one({"_id":_id}, {"$set":upd})
                 done += 1
 
-                # Güncelleme: her 5 içerikte bir + 15-20 saniye
+                # Update every 5 items + 15-20s
                 update_now = False
                 if done % 5 == 0 or idx + len(batch_ids) >= len(ids):
                     elapsed_since_last = time.time() - last_update
@@ -220,8 +224,6 @@ async def process_collection_parallel(collection, name, message, progress_data, 
                     })
 
                     new_text = generate_progress_text(progress_data, elapsed_str)
-
-                    # 🔹 Sadece mesaj değiştiyse güncelle
                     if new_text != last_text_holder["text"]:
                         await safe_edit_message(message, new_text,
                             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]]))
@@ -234,6 +236,7 @@ async def process_collection_parallel(collection, name, message, progress_data, 
     pool.shutdown(wait=False)
     return total, done, errors
 
+# HANDLE STOP
 async def handle_stop(callback_query: CallbackQuery):
     stop_event.set()
     try:
@@ -245,12 +248,12 @@ async def handle_stop(callback_query: CallbackQuery):
     except:
         pass
 
+# /cevir COMMAND
 @Client.on_message(filters.command("cevir") & filters.private & CustomFilters.owner)
 async def turkce_icerik(client: Client, message: Message):
     global stop_event
     stop_event.clear()
 
-    # Başlangıç değerleri gerçek config ile
     workers_film, batch_film, cpu_film, ram_film = dynamic_config("Filmler")
     workers_series, batch_series, cpu_series, ram_series = dynamic_config("Diziler")
 
@@ -270,11 +273,12 @@ async def turkce_icerik(client: Client, message: Message):
     await process_collection_parallel(movie_col, "Filmler", start_msg, progress_data, last_text_holder, start_time)
     await process_collection_parallel(series_col, "Diziler", start_msg, progress_data, last_text_holder, start_time)
 
-    # Sonuç ekranı
+    # Final summary
     elapsed = time.time() - start_time
     final_text = generate_final_summary(progress_data, elapsed)
     await safe_edit_message(start_msg, final_text)
 
+# CALLBACK
 @Client.on_callback_query()
 async def _cb(client: Client, query: CallbackQuery):
     if query.data == "stop":
