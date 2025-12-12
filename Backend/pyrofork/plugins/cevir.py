@@ -10,7 +10,7 @@ import time
 import math
 import os
 
-from Backend.helper.custom_filter import CustomFilters  # Owner filtresi
+from Backend.helper.custom_filter import CustomFilters  # Owner filtresi için
 
 # GLOBAL STOP EVENT
 stop_event = asyncio.Event()
@@ -33,7 +33,6 @@ movie_col = db["movie"]
 series_col = db["tv"]
 
 translator = GoogleTranslator(source='en', target='tr')
-
 
 # ------------ Dinamik Worker & Batch Ayarı ------------
 def dynamic_config():
@@ -59,7 +58,6 @@ def dynamic_config():
 
     return workers, batch
 
-
 # ------------ Güvenli Çeviri Fonksiyonu ------------
 def translate_text_safe(text, cache):
     if not text or str(text).strip() == "":
@@ -73,16 +71,14 @@ def translate_text_safe(text, cache):
     cache[text] = tr
     return tr
 
-
 # ------------ Progress Bar ------------
 def progress_bar(current, total, bar_length=12):
     if total == 0:
-        return "[⬡" + "⬡" * (bar_length - 1) + "] 0.00%"
+        return "[⬡" + "⬡"*(bar_length-1) + "] 0.00%"
     percent = (current / total) * 100
     filled_length = int(bar_length * current // total)
     bar = "⬢" * filled_length + "⬡" * (bar_length - filled_length)
     return f"[{bar}] {percent:.2f}%"
-
 
 # ------------ Worker: batch çevirici ------------
 def translate_batch_worker(batch, stop_flag):
@@ -121,7 +117,6 @@ def translate_batch_worker(batch, stop_flag):
 
     return results
 
-
 # ------------ Callback: iptal butonu ------------
 async def handle_stop(callback_query: CallbackQuery):
     stop_event.set()
@@ -134,7 +129,6 @@ async def handle_stop(callback_query: CallbackQuery):
     except:
         pass
 
-
 # ------------ /cevir Komutu (Sadece owner) ------------
 @Client.on_message(filters.command("cevir") & filters.private & CustomFilters.owner)
 async def turkce_icerik(client: Client, message: Message):
@@ -142,7 +136,7 @@ async def turkce_icerik(client: Client, message: Message):
     stop_event.clear()
 
     start_msg = await message.reply_text(
-        "🇹🇷 Türkçe çeviri başlatılıyor...\nİlerleme tek mesajda gösterilecektir.",
+        "🇹🇷 Türkçe çeviri hazırlanıyor...\nİlerleme tek mesajda gösterilecektir.",
         parse_mode=enums.ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
     )
@@ -202,7 +196,7 @@ async def turkce_icerik(client: Client, message: Message):
             c["done"] = done
             c["errors"] = errors
 
-            # 🔥 Tek Mesaj Güncellemesi
+            # 🔥 Tek Mesaj Güncellemesi (Hatalar toplam: kaldırıldı)
             if time.time() - last_update > update_interval or idx >= len(ids):
                 text = ""
                 total_done = 0
@@ -212,61 +206,11 @@ async def turkce_icerik(client: Client, message: Message):
                 ram_percent = psutil.virtual_memory().percent
 
                 for col_summary in collections:
-                    # Şu anda işlenen içerik + sonraki içerik
-                    try:
-                        current_doc = col.find_one({"_id": batch_ids[0]})
-                        if "seasons" in current_doc:
-                            season_list = current_doc.get("seasons", [])
-                            if season_list:
-                                season_idx = 0
-                                episode_idx = 0
-                                season = season_list[season_idx]
-                                episodes = season.get("episodes", [])
-                                if episodes:
-                                    ep = episodes[episode_idx]
-                                    current_title = f"{current_doc.get('name') or current_doc.get('title')} – S{season_idx+1:02d}E{episode_idx+1:02d}"
-                                else:
-                                    current_title = current_doc.get("name") or current_doc.get("title")
-                            else:
-                                current_title = current_doc.get("name") or current_doc.get("title")
-                        else:
-                            current_title = current_doc.get("name") or current_doc.get("title")
-                    except:
-                        current_title = "Bilinmiyor"
-
-                    try:
-                        next_idx = idx + batch_size
-                        if next_idx < len(ids):
-                            next_doc = col.find_one({"_id": ids[next_idx]})
-                            if "seasons" in next_doc:
-                                season_list = next_doc.get("seasons", [])
-                                if season_list:
-                                    season_idx = 0
-                                    episode_idx = 0
-                                    season = season_list[season_idx]
-                                    episodes = season.get("episodes", [])
-                                    if episodes:
-                                        ep = episodes[episode_idx]
-                                        next_title = f"{next_doc.get('name') or next_doc.get('title')} – S{season_idx+1:02d}E{episode_idx+1:02d}"
-                                    else:
-                                        next_title = next_doc.get("name") or next_doc.get("title")
-                                else:
-                                    next_title = next_doc.get("name") or next_doc.get("title")
-                            else:
-                                next_title = next_doc.get("name") or next_doc.get("title")
-                        else:
-                            next_title = "Yok (son içerik)"
-                    except:
-                        next_title = "Bilinmiyor"
-
                     text += (
                         f"📌 {col_summary['name']}: {col_summary['done']}/{col_summary['total']}\n"
                         f"{progress_bar(col_summary['done'], col_summary['total'])}\n"
-                        f"Kalan: {col_summary['total'] - col_summary['done']}\n"
-                        f"🔄 Şu anda işlenen: {current_title}\n"
-                        f"➡️ Sıradaki: {next_title}\n\n"
+                        f"Kalan: {col_summary['total'] - col_summary['done']}\n\n"
                     )
-
                     total_done += col_summary['done']
                     total_all += col_summary['total']
 
@@ -322,7 +266,6 @@ async def turkce_icerik(client: Client, message: Message):
         await start_msg.edit_text(final_text)
     except:
         pass
-
 
 # ------------ Callback query handler ------------
 @Client.on_callback_query()
