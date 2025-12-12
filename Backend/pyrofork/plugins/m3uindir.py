@@ -3,30 +3,20 @@ from pyrogram.types import Message
 from Backend.helper.custom_filter import CustomFilters
 from pymongo import MongoClient
 import os
-import importlib.util
 import re
 
-# ------------ CONFIG/ENV'DEN ALMA ------------
-CONFIG_PATH = "/home/debian/dfbot/config.env"
+# ------------ SADECE ENV'DEN AL ------------
 
-def read_config():
-    if not os.path.exists(CONFIG_PATH):
-        return {}
-    spec = importlib.util.spec_from_file_location("config", CONFIG_PATH)
-    config = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(config)
-    return config
-
-config = read_config()
-db_raw = getattr(config, "DATABASE", "") or os.getenv("DATABASE", "")
+db_raw = os.getenv("DATABASE", "")
 db_urls = [u.strip() for u in db_raw.split(",") if u.strip()]
 if len(db_urls) < 2:
     raise Exception("İkinci DATABASE bulunamadı!")
 
 MONGO_URL = db_urls[1]
-BASE_URL = getattr(config, "BASE_URL", "") or os.getenv("BASE_URL", "")
+
+BASE_URL = os.getenv("BASE_URL", "")
 if not BASE_URL:
-    raise Exception("BASE_URL config veya env'de bulunamadı!")
+    raise Exception("BASE_URL ortam değişkeninde bulunamadı!")
 
 # ------------ MONGO BAĞLANTISI ------------
 client_db = MongoClient(MONGO_URL)
@@ -87,20 +77,18 @@ async def send_m3u_file(client, message: Message):
                     else:
                         year_group = "Filmler"
 
-                    # --- Yıl kategorisi satırı ---
                     m3u.write(
                         f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" group-title="{year_group}",{name}\n'
                     )
                     m3u.write(f"{url}\n")
 
-                    # --- Tür kategorileri satırları ---
-                    if genres:
-                        for genre in genres:
-                            genre_group = f"{genre} Filmleri"
-                            m3u.write(
-                                f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" group-title="{genre_group}",{name}\n'
-                            )
-                            m3u.write(f"{url}\n")
+                    # --- Tür kategorileri ---
+                    for genre in genres:
+                        genre_group = f"{genre} Filmleri"
+                        m3u.write(
+                            f'#EXTINF:-1 tvg-id="" tvg-name="{name}" tvg-logo="{logo}" group-title="{genre_group}",{name}\n'
+                        )
+                        m3u.write(f"{url}\n")
 
             # -----------------------------
             # DİZİLER
@@ -123,24 +111,24 @@ async def send_m3u_file(client, message: Message):
                                 continue
 
                             url = f"{BASE_URL}/dl/{file_id}/video.mkv"
-                            file_name_lower = name.lower()
+                            name_low = name.lower()
 
-                            # --- Dizi platform kategorisi ---
-                            if "dsnp" in file_name_lower:
+                            # --- Platform kategorileri ---
+                            if "dsnp" in name_low:
                                 group = "Disney Dizileri"
-                            elif "nf" in file_name_lower:
+                            elif "nf" in name_low:
                                 group = "Netflix Dizileri"
-                            elif "exxen" in file_name_lower:
+                            elif "exxen" in name_low:
                                 group = "Exxen Dizileri"
-                            elif "tabii" in file_name_lower:
+                            elif "tabii" in name_low:
                                 group = "Tabii Dizileri"
-                            elif "hbo" in file_name_lower or "hbomax" in file_name_lower or "blutv" in file_name_lower:
+                            elif "hbo" in name_low or "hbomax" in name_low or "blutv" in name_low:
                                 group = "Hbo Dizileri"
-                            elif "amzn" in file_name_lower:
+                            elif "amzn" in name_low:
                                 group = "Amazon Dizileri"
-                            elif "gain" in file_name_lower:
+                            elif "gain" in name_low:
                                 group = "Gain Dizileri"
-                            elif "tod" in file_name_lower:
+                            elif "tod" in name_low:
                                 group = "Tod Dizileri"
                             else:
                                 group = "Diziler"
