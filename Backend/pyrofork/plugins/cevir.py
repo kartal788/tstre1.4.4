@@ -163,9 +163,9 @@ async def turkce_icerik(client: Client, message: Message):
     
     # Eğer önceden başlatılmış bir işlem varsa uyarı ver
     if stop_event.is_set():
-         await message.reply_text("⛔ Şu anda devam eden bir işlem var. Lütfen bitmesini veya tamamen iptal olmasını bekleyin.")
-         return
-         
+        await message.reply_text("⛔ Şu anda devam eden bir işlem var. Lütfen bitmesini veya tamamen iptal olmasını bekleyin.")
+        return
+        
     stop_event.clear()
 
     start_msg = await message.reply_text(
@@ -281,8 +281,9 @@ async def turkce_icerik(client: Client, message: Message):
                     remaining_all = total_all - total_done
                     elapsed_time = time.time() - start_time
 
+                    # DEĞİŞİKLİK BURADA: Süre tam sayı olarak gösteriliyor
                     text += (
-                        f" Süre: `{round(elapsed_time, 2)}` sn | Kalan: `{remaining_all}`\n"
+                        f" Süre: `{int(elapsed_time)}` sn | Kalan: `{remaining_all}`\n"
                         f" CPU: `{cpu}%` | RAM: `{ram_percent}%`"
                     )
 
@@ -325,9 +326,9 @@ async def turkce_icerik(client: Client, message: Message):
     final_text += (
         f"📊 **Genel Özet**\n"
         f"Toplam içerik: `{total_all}`\n"
-        f"Başarılı    : `{done_all - errors_all}`\n"
-        f"Hatalı      : `{errors_all}`\n"
-        f"Kalan       : `{remaining_all}`\n"
+        f"Başarılı    : `{done_all - errors_all}`\n"
+        f"Hatalı      : `{errors_all}`\n"
+        f"Kalan       : `{remaining_all}`\n"
         f"Toplam süre  : `{eta_str}`"
     )
 
