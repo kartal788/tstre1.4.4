@@ -86,19 +86,21 @@ def progress_bar(current, total, bar_length=12):
     percent_display = min(percent, 100.00)
     return f"[{bar}] {percent_display:.2f}%"
 
-# ------------ Zaman Formatlama Yardımcı Fonksiyonu (Özel Format) ------------
+# ------------ Zaman Formatlama Yardımcı Fonksiyonu (Özel Format - Boşluksuz) ------------
 def format_time_custom(total_seconds):
     """
-    Saniyeyi Saat(s) Dakika(d) Saniye(s) formatına çevirir (Örn: 0s 0d 05s)
+    Saniyeyi Saat(s) Dakika(d) Saniye(s) formatına çevirir (Örn: 0s0d05s)
     """
     if total_seconds is None or total_seconds < 0:
-        return "N/A"
+        # Hata durumunda veya N/A için sadece 0 değerlerini döndürelim
+        return "0s0d00s"
+
     total_seconds = int(total_seconds)
     hours, rem = divmod(total_seconds, 3600)
     minutes, seconds = divmod(rem, 60)
     
-    # İstenen format: 0s 0d 00s
-    return f"{int(hours)}s {int(minutes)}d {int(seconds):02}s"
+    # İstenen format: 0s0d00s (Boşluksuz)
+    return f"{int(hours)}s{int(minutes)}d{int(seconds):02}s"
 
 # ------------ Worker: batch çevirici ------------
 def translate_batch_worker(batch_data):
@@ -182,8 +184,9 @@ async def turkce_icerik(client: Client, message: Message):
         
     stop_event.clear()
 
+    # Bilgilendirme mesajı kaldırıldı.
     start_msg = await message.reply_text(
-        "🇹🇷 Türkçe çeviri hazırlanıyor...\nİlerleme tek mesajda gösterilecektir.\n\n_İlk çeviri toplu işi (batch) tamamlanana kadar ilerleme %0.00 görünebilir._",
+        "🇹🇷 Türkçe çeviri hazırlanıyor...\nİlerleme tek mesajda gösterilecektir.",
         parse_mode=enums.ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
     )
@@ -295,8 +298,7 @@ async def turkce_icerik(client: Client, message: Message):
                     text += (
                         f"📌 **{c['name']}**: {c['done']}/{c['total']}\n"
                         f"{progress_bar(c['done'], c['total'])}\n"
-                        # Kalan satırı kaldırıldı
-                        f"Kalan: {remaining_current}\n\n" # Kalanı sadece koleksiyon için ekleyelim
+                        f"Kalan: {remaining_current}\n\n"
                     )
                     
                     # 2. Diğer Koleksiyonların Durumu
@@ -304,10 +306,10 @@ async def turkce_icerik(client: Client, message: Message):
                         for col_summary in collections:
                             if col_summary['name'] != c['name']:
                                 # Sadece tamamlananları göster
-                                if col_summary['done'] == col_summary['total']:
+                                if col_summary['done'] == col_summary['total'] and col_summary['total'] > 0:
                                     text += f"✅ **{col_summary['name']}** - Tamamlandı: {col_summary['total']}\n"
-                                # İşlenmemişse sadece bekliyor diyebiliriz (isteğe bağlı)
-                                elif col_summary['done'] == 0:
+                                # İşlenmemişse bekliyor
+                                elif col_summary['done'] == 0 and col_summary['total'] > 0:
                                      text += f"⏳ **{col_summary['name']}** - Beklemede\n"
                         text += "\n"
 
@@ -317,20 +319,20 @@ async def turkce_icerik(client: Client, message: Message):
                     elapsed_time = time.time() - start_time
                     remaining_all = total_all - total_done
                     
-                    # 3. ETA ve Hız Hesaplaması
-                    # İlk başta hızı sıfır almamak için basit bir kontrol
+                    # 3. ETA Hesaplaması
                     if total_done > 0 and elapsed_time > 0:
                         speed = total_done / elapsed_time # öğe/saniye
-                        # Kalan süreyi hesapla: Kalan öğe / Hız
                         eta_seconds = remaining_all / speed
                     else:
-                        eta_seconds = None
+                        eta_seconds = -1 # N/A için -1 kullanıyoruz
 
                     # Formatlanmış Geçen Süre ve ETA
                     elapsed_time_str = format_time_custom(elapsed_time)
-                    eta_str = format_time_custom(eta_seconds) if eta_seconds is not None else "N/A"
+                    
+                    # ETA'yı formatlarken, eğer N/A ise 0s0d00s olarak gösteririz (format_time_custom sayesinde)
+                    eta_str = format_time_custom(eta_seconds)
 
-                    # İSTENEN SÜRE FORMATI: Süre: 0s 0d 57s (0s 0d 2s)
+                    # İSTENEN SÜRE FORMATI: Süre: 0s0d57s (0s0d2s)
                     text += (
                         f" Süre: `{elapsed_time_str}` (`{eta_str}`)\n"
                         f" CPU: `{cpu}%` | RAM: `{ram_percent}%`"
@@ -361,7 +363,7 @@ async def turkce_icerik(client: Client, message: Message):
 
     total_time = round(time.time() - start_time)
     
-    # Süre formatını final ekranda formatla (0s 0d 00s)
+    # Süre formatını final ekranda formatla (0s0d00s)
     final_time_str = format_time_custom(total_time)
 
     final_text = "🎉 **Türkçe Çeviri Sonuçları**\n\n"
