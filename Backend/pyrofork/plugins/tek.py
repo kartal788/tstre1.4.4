@@ -262,27 +262,53 @@ async def tur_ve_platform_duzelt(client: Client, message: Message):
 @Client.on_message(filters.command("istatistik") & filters.private & CustomFilters.owner)
 async def send_statistics(client: Client, message: Message):
     try:
-        total_movies = movie_col.count_documents({})
-        total_series = series_col.count_documents({})
-        translated_movies = movie_col.count_documents({"cevrildi": True})
-        translated_series = series_col.count_documents({"cevrildi": True})
+        db_urls = [u.strip() for u in os.getenv("DATABASE","").split(",") if u.strip()]
+        if not db_urls or len(db_urls)<2:
+            await message.reply_text("⚠️ İkinci veritabanı bulunamadı.")
+            return
+        client_db = MongoClient(db_urls[1])
+        db_name_list = client_db.list_database_names()
+        if not db_name_list:
+            await message.reply_text("⚠️ Veritabanı bulunamadı.")
+            return
+        db = client_db[db_name_list[0]]
+        total_movies = db["movie"].count_documents({})
+        total_series = db["tv"].count_documents({})
+        translated_movies = db["movie"].count_documents({"cevrildi": True})
+        translated_series = db["tv"].count_documents({"cevrildi": True})
+
+        stats = db.command("dbstats")
+        storage_mb = round(stats.get("storageSize",0)/(1024*1024),2)
+        max_storage_mb = 512
+        storage_percent = round((storage_mb/max_storage_mb)*100,1)
+
+        genre_stats = defaultdict(lambda: {"film":0,"dizi":0})
+        for doc in db["movie"].aggregate([{"$unwind":"$genres"},{"$group":{"_id":"$genres","count":{"$sum":1}}}]):
+            genre_stats[doc["_id"]]["film"]=doc["count"]
+        for doc in db["tv"].aggregate([{"$unwind":"$genres"},{"$group":{"_id":"$genres","count":{"$sum":1}}}]):
+            genre_stats[doc["_id"]]["dizi"]=doc["count"]
+
         cpu = psutil.cpu_percent()
         ram = psutil.virtual_memory().percent
         disk = psutil.disk_usage(DOWNLOAD_DIR)
-        free_disk = round(disk.free / (1024**3), 2)
+        free_disk = round(disk.free/(1024**3),2)
         free_percent = round((disk.free/disk.total)*100,1)
         uptime_sec = int(time.time()-bot_start_time)
         h, rem = divmod(uptime_sec,3600)
         m, s = divmod(rem,60)
         uptime = f"{h}s {m}d {s}s"
 
+        genre_lines = [f"{genre:<12} | Film: {counts['film']:<3} | Dizi: {counts['dizi']:<3}" for genre,counts in sorted(genre_stats.items())]
+        genre_text = "\n".join(genre_lines)
+
         text = (
             f"⌬ <b>İstatistik</b>\n\n"
             f"┠ Filmler: {total_movies} (Çevrilen: {translated_movies})\n"
             f"┠ Diziler: {total_series} (Çevrilen: {translated_series})\n"
-            f"┖ Disk Boş: {free_disk}GB [{free_percent}%]\n"
-            f"┟ CPU → {cpu}% | RAM → {ram}%\n"
-            f"┖ Süre → {uptime}"
+            f"┖ Depolama: {storage_mb} MB ({storage_percent}%)\n\n"
+            f"<b>Tür Bazlı:</b>\n<pre>{genre_text}</pre>\n\n"
+            f"┟ CPU → {cpu}% | Boş → {free_disk}GB [{free_percent}%]\n"
+            f"┖ RAM → {ram}% | Süre → {uptime}"
         )
         await message.reply_text(text, parse_mode=enums.ParseMode.HTML, quote=True)
     except Exception as e:
