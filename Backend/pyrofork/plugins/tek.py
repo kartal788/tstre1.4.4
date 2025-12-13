@@ -217,49 +217,42 @@ async def cevir(client: Client, message: Message):
     finally:
         pool.shutdown(wait=False)
 
-    # ---------------- Sonuç ekranı ----------------
-    end_time = time.time()
-    total_duration = end_time - start_time  # Toplam süre
+# ---------------- Sonuç ekranı ----------------
+end_time = time.time()
+total_duration = end_time - start_time  # Toplam süre
 
-    total_to_translate = 0
-    total_done = 0
-    total_errors = 0
+# Toplam sayılar
+total_movies = collections[0].get("done", 0)
+total_episodes = collections[1].get("done_episodes", 0)
+total_done = total_movies + total_episodes
+total_to_translate = collections[0]["total"] + collections[1]["total_episodes"]
+total_remaining = total_to_translate - total_done
+total_errors = sum(len(c["errors_list"]) for c in collections)
 
-    final_text = "🎉 **Türkçe Çeviri Sonuçları**\n\n"
+# Genel özet metni
+final_text = (
+    "📊 **Genel Özet**\n\n"
+    f"┠ Film    : {total_movies}\n"
+    f"┠ Bölüm   : {total_episodes}\n"
+    f"┠ Başarılı: {total_done}\n"
+    f"┠ Kalan   : {total_remaining}\n"
+    f"┠ Hatalı  : {total_errors}\n"
+    f"┠ Süre    : {format_time_custom(total_duration)}\n"
+)
 
-    for c in collections:
-        col = c["col"]
-        errors_count = len(c["errors_list"])
+# Hataları ekle
+hata_icerigi = []
+for c in collections:
+    if c["errors_list"]:
+        hata_icerigi.append(f"*** {c['name']} Hataları ***")
+        hata_icerigi.extend(c["errors_list"])
+        hata_icerigi.append("")  # Boş satır
 
-        if c["name"] == "Diziler":
-            total_count = col.count_documents({"seasons.episodes.cevrildi": {"$ne": True}}) + c.get("done_episodes", 0)
-            done_count = c.get("done_episodes", 0)
-        else:
-            total_count = col.count_documents({"cevrildi": {"$ne": True}}) + c.get("done", 0)
-            done_count = c.get("done", 0)
+if hata_icerigi:
+    final_text += "\n".join(hata_icerigi)
 
-        total_to_translate += total_count
-        total_done += done_count
-        total_errors += errors_count
-
-        final_text += (
-            f"📌 **{c['name']}**: {done_count}/{total_count}\n"
-            f"{progress_bar(done_count, total_count)}\n"
-            f"Hatalar: `{errors_count}`\n\n"
-        )
-
-    total_remaining = total_to_translate - total_done
-
-    final_text += (
-        f"📊 **Genel Özet**\n"
-        f"┠ Toplam Süre   : {format_time_custom(total_duration)}\n"
-        f"┠ Toplam İçerik : {total_to_translate}\n"
-        f"┠ Başarılı      : {total_done}\n"
-        f"┠ Kalan         : {total_remaining}\n"
-        f"┠ Hatalı        : {total_errors}\n"
-    )
-
-    await start_msg.edit_text(final_text, parse_mode=enums.ParseMode.MARKDOWN)
+# Mesajı güncelle
+await start_msg.edit_text(final_text, parse_mode=enums.ParseMode.MARKDOWN)
 
     # Hataları dosya olarak gönder
     hata_icerigi = []
