@@ -215,18 +215,48 @@ async def cevir(client: Client, message: Message):
     finally:
         pool.shutdown(wait=False)
 
-    # Sonuç mesajı
-    final_text = "🎉 **Türkçe Çeviri Sonuçları**\n\n"
-    for c in collections:
-        done_count = c.get("done_episodes", c.get("done", 0))
-        total_count = c.get("total_episodes", c.get("total", 0))
-        final_text += (
-            f"📌 **{c['name']}**: {done_count}/{total_count}\n"
-            f"{progress_bar(done_count, total_count)}\n"
-            f"Hatalar: `{len(c['errors_list'])}`\n\n"
-        )
+# Sonuç mesajı
+end_time = time.time()
+total_duration = end_time - start_time  # Toplam süre
+final_text = "🎉 **Türkçe Çeviri Sonuçları**\n\n"
 
-    await start_msg.edit_text(final_text, parse_mode=enums.ParseMode.MARKDOWN)
+# Genel istatistikleri başlat
+total_to_translate = 0   # çevrilecek içerik sayısı
+total_done = 0
+total_errors = 0
+
+for c in collections:
+    # Çevrilecek toplam içerik: cevrildi=False olanlar
+    if c["name"] == "Diziler":
+        total_count = c["total_episodes"]
+        done_count = c.get("done_episodes", 0)
+    else:
+        total_count = c["total"]
+        done_count = c.get("done", 0)
+
+    errors_count = len(c["errors_list"])
+    
+    total_to_translate += total_count
+    total_done += done_count
+    total_errors += errors_count
+
+    final_text += (
+        f"📌 **{c['name']}**: {done_count}/{total_count}\n"
+        f"{progress_bar(done_count, total_count)}\n"
+        f"Hatalar: `{errors_count}`\n\n"
+    )
+
+# Genel Özet: toplam içerik = çevrilecek içerik sayısı
+total_remaining = total_to_translate - total_done
+final_text += (
+    f"📊 **Genel Özet**\n"
+    f"┠ Toplam Süre   : {format_time_custom(total_duration)}\n"
+    f"┠ Toplam İçerik : {total_to_translate}\n"
+    f"┠ Başarılı      : {total_done}\n"
+    f"┠ Kalan         : {total_remaining}\n"
+    f"┠ Hatalı        : {total_errors}\n"
+)
+
 
     # Hataları dosya olarak gönder
     hata_icerigi = []
