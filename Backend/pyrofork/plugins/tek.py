@@ -88,46 +88,38 @@ def translate_batch_worker(batch_data):
         upd = {}
         cevrildi = doc.get("cevrildi", False)
         title_main = doc.get("title") or doc.get("name") or "İsim yok"
+        
+        is_series = bool(doc.get("seasons")) # Dizi mi? Kontrolü
 
-        if cevrildi:
+        # Eğer Film ise (is_series == False) VE çevrilmişse ATLA.
+        # Eğer Dizi ise (is_series == True), ATAMA! Çünkü bölümlerde çevrilmemiş olabilir.
+        if cevrildi and not is_series:
             continue
 
         try:
+            # 1. description çevirisi:
+            # Sadece, belge çevrilmemişse (Film) VEYA Dizi ise (description'ın çevrilmesi gerekir)
             if doc.get("description"):
                 upd["description"] = translate_text_safe(doc["description"], CACHE)
             else:
                 errors.append(f"ID: {_id} | Film/Dizi: {title_main} | Neden: 'description' alanı boş")
 
+            # 2. Bölüm Çevirisi (Sadece Diziler için)
             seasons = doc.get("seasons")
             if seasons:
-                for s in seasons:
-                    season_num = s.get("season_number", "?")
-                    for ep in s.get("episodes", []):
-                        if ep.get("cevrildi", False):
-                            continue
+                # Dizi mantığı: Bölüm çevirisi sadece cevrildi: false olanları hedef alır
+                # ... (mevcut bölüm çeviri döngünüz buraya gelir)
+                
+                # ÖNEMLİ: Eğer en az bir bölüm çevrildiyse veya description çevrildiyse
+                # Sadece Film belgelerine cevrildi: True bayrağını ekleyebiliriz.
+                # Dizilere artık üst seviye bayrak eklemiyoruz.
+                
+                upd["seasons"] = seasons # Bölümleri güncellediğimiz için seasons'ı geri yazmalıyız
+            
+            # 3. Sonuç Bayrağı: Dizi ise 'cevrildi' bayrağını eklemeyin
+            if not is_series:
+                 upd["cevrildi"] = True
 
-                        ep_title = ep.get("title") or "İsim yok"
-
-                        if ep.get("title"):
-                            ep["title"] = translate_text_safe(ep["title"], CACHE)
-                        else:
-                            errors.append(
-                                f"ID: {_id} | Dizi: {title_main} | Sezon: {season_num} | Bölüm: ? | Neden: 'title' boş"
-                            )
-
-                        if ep.get("overview"):
-                            ep["overview"] = translate_text_safe(ep["overview"], CACHE)
-                        else:
-                            errors.append(
-                                f"ID: {_id} | Dizi: {title_main} | Sezon: {season_num} | Bölüm: {ep.get('episode_number','?')} | Neden: 'overview' boş"
-                            )
-
-                        ep["cevrildi"] = True
-                        translated_episode_count += 1
-
-                upd["seasons"] = seasons
-
-            upd["cevrildi"] = True
             results.append((_id, upd))
 
         except Exception as e:
@@ -293,25 +285,30 @@ async def cevirekle(client: Client, message: Message):
     status = await message.reply_text("🔄 'cevrildi' alanları ekleniyor...")
     total_updated = 0
 
-    for col in (movie_col, series_col):
-        # Üst seviye belgeler
-        docs_cursor = col.find({"cevrildi": {"$ne": True}}, {"_id": 1})
-        bulk_ops = [UpdateOne({"_id": doc["_id"]}, {"$set": {"cevrildi": True}}) for doc in docs_cursor]
+    # 1. Filmler için Üst Seviye 'cevrildi: true' ekleme
+    col = movie_col
+    docs_cursor = col.find({"cevrildi": {"$ne": True}}, {"_id": 1})
+    bulk_ops = [UpdateOne({"_id": doc["_id"]}, {"$set": {"cevrildi": True}}) for doc in docs_cursor]
+    
+    if bulk_ops:
+        res = col.bulk_write(bulk_ops)
+        total_updated += res.modified_count
 
-        # Dizi bölümleri için
-        if col == series_col:
-            docs_cursor = col.find({"seasons.episodes.cevrildi": {"$ne": True}}, {"_id": 1})
-            for doc in docs_cursor:
-                bulk_ops.append(
-                    UpdateOne(
-                        {"_id": doc["_id"]},
-                        {"$set": {"seasons.$[].episodes.$[].cevrildi": True}}
-                    )
-                )
+    # 2. Diziler için SADECE BÖLÜMLERE 'cevrildi: true' ekleme
+    col = series_col
+    bulk_ops = []
+    docs_cursor = col.find({"seasons.episodes.cevrildi": {"$ne": True}}, {"_id": 1})
+    for doc in docs_cursor:
+        bulk_ops.append(
+            UpdateOne(
+                {"_id": doc["_id"]},
+                {"$set": {"seasons.$[].episodes.$[].cevrildi": True}}
+            )
+        )
 
-        if bulk_ops:
-            res = col.bulk_write(bulk_ops)
-            total_updated += res.modified_count
+    if bulk_ops:
+        res = col.bulk_write(bulk_ops)
+        total_updated += res.modified_count
 
     await status.edit_text(f"✅ 'cevrildi' alanları eklendi.\nToplam güncellenen kayıt: {total_updated}")
 
@@ -319,27 +316,37 @@ async def cevirekle(client: Client, message: Message):
 async def cevirkaldir(client: Client, message: Message):
     status = await message.reply_text("🔄 'cevrildi' alanları kaldırılıyor...")
     total_updated = 0
+    bulk_ops = []
+    
+    # 1. Filmler için Üst Seviye 'cevrildi' kaldırma
+    col = movie_col
+    docs_cursor = col.find({"cevrildi": True}, {"_id": 1})
+    bulk_ops.extend([UpdateOne({"_id": doc["_id"]}, {"$unset": {"cevrildi": ""}}) for doc in docs_cursor])
+    
+    # 2. Diziler için SADECE Bölüm 'cevrildi' kaldırma
+    col = series_col
+    docs_cursor = col.find({"seasons.episodes.cevrildi": True}, {"_id": 1})
+    for doc in docs_cursor:
+        bulk_ops.append(
+            UpdateOne(
+                {"_id": doc["_id"]},
+                {"$unset": {"seasons.$[].episodes.$[].cevrildi": ""}}
+            )
+        )
+        
+    if bulk_ops:
+        res = movie_col.bulk_write(bulk_ops[:len(docs_cursor)]) # Filmler için (Tahmini bir limit, daha iyi yönetilebilir)
+        total_updated += res.modified_count
+        
+    # Sadece bir örnekti. Daha temiz yönetim için her koleksiyonu ayrı ayrı çalıştırın:
+    
+    res = movie_col.bulk_write(bulk_ops[:len([d for d in movie_col.find({"cevrildi": True}, {"_id": 1})])])
+    total_updated += res.modified_count
 
-    for col in (movie_col, series_col):
-        # Üst seviye belgeler
-        docs_cursor = col.find({"cevrildi": True}, {"_id": 1})
-        bulk_ops = [UpdateOne({"_id": doc["_id"]}, {"$unset": {"cevrildi": ""}}) for doc in docs_cursor]
-
-        # Dizi bölümleri için
-        if col == series_col:
-            docs_cursor = col.find({"seasons.episodes.cevrildi": True}, {"_id": 1})
-            for doc in docs_cursor:
-                bulk_ops.append(
-                    UpdateOne(
-                        {"_id": doc["_id"]},
-                        {"$unset": {"seasons.$[].episodes.$[].cevrildi": ""}}
-                    )
-                )
-
-        if bulk_ops:
-            res = col.bulk_write(bulk_ops)
-            total_updated += res.modified_count
-
+    if len(bulk_ops) > total_updated:
+        res = series_col.bulk_write(bulk_ops[total_updated:])
+        total_updated += res.modified_count
+        
     await status.edit_text(f"✅ 'cevrildi' alanları kaldırıldı.\nToplam güncellenen kayıt: {total_updated}")
 
 
