@@ -75,7 +75,7 @@ def translate_batch_worker(batch_data):
     batch_docs = batch_data["docs"]
     stop_flag_set = batch_data["stop_flag_set"]
     if stop_flag_set:
-        return [], []  # artık hatalar da döndürülüyor
+        return [], []
 
     CACHE = {}
     results = []
@@ -92,9 +92,13 @@ def translate_batch_worker(batch_data):
             continue
 
         try:
+            # description çevirisi
             if doc.get("description"):
                 upd["description"] = translate_text_safe(doc["description"], CACHE)
+            else:
+                errors.append(f"ID: {_id} | Neden: 'description' alanı boş")
 
+            # seasons / episodes çevirisi
             seasons = doc.get("seasons")
             if seasons:
                 for s in seasons:
@@ -103,20 +107,24 @@ def translate_batch_worker(batch_data):
                             continue
                         if ep.get("title"):
                             ep["title"] = translate_text_safe(ep["title"], CACHE)
+                        else:
+                            errors.append(f"ID: {_id} | Sezon: {s.get('season_number')} | "
+                                          f"Bölüm: {ep.get('episode_number')} | Neden: 'title' alanı boş")
                         if ep.get("overview"):
                             ep["overview"] = translate_text_safe(ep["overview"], CACHE)
+                        else:
+                            errors.append(f"ID: {_id} | Sezon: {s.get('season_number')} | "
+                                          f"Bölüm: {ep.get('episode_number')} | Neden: 'overview' alanı boş")
                         ep["cevrildi"] = True
                 upd["seasons"] = seasons
 
             upd["cevrildi"] = True
             results.append((_id, upd))
         except Exception as e:
-            # Hata varsa loga ekle
             errors.append(f"ID: {_id} | Hata: {str(e)}")
 
     return results, errors
 
-# --------cevir---------
 
 # ---------------- /cevir ----------------
 @Client.on_message(filters.command("cevir") & filters.private & filters.user(OWNER_ID))
@@ -216,7 +224,7 @@ async def cevir(client: Client, message: Message):
                 eta_m, eta_s = divmod(rem, 60)
                 eta_str = f"{eta_h}h{eta_m}m{eta_s}s"
 
-                # İlerleme mesajını sadece özet ve ilerleme barı ile güncelle
+                # İlerleme mesajını güncelle
                 if time.time() - last_update >= update_interval or idx >= len(ids):
                     last_update = time.time()
                     total_remaining = total_to_translate - total_done
@@ -243,7 +251,7 @@ async def cevir(client: Client, message: Message):
     finally:
         pool.shutdown(wait=False)
 
-    # Sonuç özeti
+    # Sonuç özeti ve log dosyası
     async def send_final_summary():
         end_time = time.time()
         total_duration = end_time - start_time
@@ -276,7 +284,7 @@ async def cevir(client: Client, message: Message):
             if c["errors_list"]:
                 hata_icerigi.append(f"*** {c['name']} Hataları ***")
                 hata_icerigi.extend(c["errors_list"])
-                hata_icerigi.append("")
+                hata_icerigi.append("")  # boş satır
 
         if hata_icerigi:
             log_path = "cevirhatalari.txt"
