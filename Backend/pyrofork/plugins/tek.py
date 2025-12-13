@@ -217,49 +217,51 @@ async def cevir(client: Client, message: Message):
     finally:
         pool.shutdown(wait=False)
 
-# ---------------- Sonuç ekranı ----------------
-end_time = time.time()
-total_duration = end_time - start_time  # Toplam süre
+    # ---------------- Sonuç ekranı ----------------
+    async def send_final_summary():
+        end_time = time.time()
+        total_duration = end_time - start_time
 
-# Toplam sayılar
-total_movies = collections[0].get("done", 0)
-total_episodes = collections[1].get("done_episodes", 0)
-total_done = total_movies + total_episodes
-total_to_translate = collections[0]["total"] + collections[1]["total_episodes"]
-total_remaining = total_to_translate - total_done
-total_errors = sum(len(c["errors_list"]) for c in collections)
+        total_movies = collections[0].get("done", 0)
+        total_episodes = collections[1].get("done_episodes", 0)
+        total_done = total_movies + total_episodes
+        total_to_translate = collections[0]["total"] + collections[1]["total_episodes"]
+        total_remaining = total_to_translate - total_done
+        total_errors = sum(len(c["errors_list"]) for c in collections)
 
-# Genel özet metni
-final_text = (
-    "📊 **Genel Özet**\n\n"
-    f"┠ Film    : {total_movies}\n"
-    f"┠ Bölüm   : {total_episodes}\n"
-    f"┠ Başarılı: {total_done}\n"
-    f"┠ Kalan   : {total_remaining}\n"
-    f"┠ Hatalı  : {total_errors}\n"
-    f"┠ Süre    : {format_time_custom(total_duration)}"
-)
+        final_text = (
+            "📊 **Genel Özet**\n\n"
+            f"┠ Film    : {total_movies}\n"
+            f"┠ Bölüm   : {total_episodes}\n"
+            f"┠ Başarılı: {total_done}\n"
+            f"┠ Kalan   : {total_remaining}\n"
+            f"┠ Hatalı  : {total_errors}\n"
+            f"┠ Süre    : {format_time_custom(total_duration)}"
+        )
 
-await start_msg.edit_text(final_text, parse_mode=enums.ParseMode.MARKDOWN)
+        await start_msg.edit_text(final_text, parse_mode=enums.ParseMode.MARKDOWN)
 
-# ---------------- Hataları dosya olarak gönder ----------------
-hata_icerigi = []
-for c in collections:
-    if c["errors_list"]:
-        hata_icerigi.append(f"*** {c['name']} Hataları ***")
-        hata_icerigi.extend(c["errors_list"])
-        hata_icerigi.append("")  # Boş satır
+        # Hataları dosya olarak gönder
+        hata_icerigi = []
+        for c in collections:
+            if c["errors_list"]:
+                hata_icerigi.append(f"*** {c['name']} Hataları ***")
+                hata_icerigi.extend(c["errors_list"])
+                hata_icerigi.append("")
 
-if hata_icerigi:
-    log_path = "cevirhatalari.txt"
-    with open(log_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(hata_icerigi))
+        if hata_icerigi:
+            log_path = "cevirhatalari.txt"
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(hata_icerigi))
 
-    try:
-        await client.send_document(chat_id=OWNER_ID, document=log_path,
-                                   caption="⛔ Çeviri sırasında hatalar oluştu / kalan içerikler")
-    except:
-        pass
+            try:
+                await client.send_document(chat_id=OWNER_ID, document=log_path,
+                                           caption="⛔ Çeviri sırasında hatalar oluştu / kalan içerikler")
+            except:
+                pass
+
+    await send_final_summary()
+
 
 # ---------------- /cevirekle ----------------
 @Client.on_message(filters.command("cevirekle") & filters.private & filters.user(OWNER_ID))
