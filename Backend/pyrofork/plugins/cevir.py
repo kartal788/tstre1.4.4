@@ -1,6 +1,5 @@
-import asyncio 
 from pyrogram import Client, filters, enums
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.types import Message
 from pymongo import MongoClient
 from deep_translator import GoogleTranslator
 import multiprocessing
@@ -11,9 +10,6 @@ import math
 import os
 
 from Backend.helper.custom_filter import CustomFilters  # Owner filtresi için
-
-# GLOBAL STOP EVENT
-stop_event = asyncio.Event()
 
 # ------------ DATABASE Bağlantısı (Sadece ortam değişkeni) ------------
 db_raw = os.getenv("DATABASE", "")
@@ -81,14 +77,11 @@ def progress_bar(current, total, bar_length=12):
     return f"[{bar}] {percent:.2f}%"
 
 # ------------ Worker: batch çevirici ------------
-def translate_batch_worker(batch, stop_flag):
+def translate_batch_worker(batch):
     CACHE = {}
     results = []
 
     for doc in batch:
-        if stop_flag.is_set():
-            break
-
         _id = doc.get("_id")
         upd = {}
 
@@ -102,8 +95,6 @@ def translate_batch_worker(batch, stop_flag):
             for season in seasons:
                 eps = season.get("episodes", []) or []
                 for ep in eps:
-                    if stop_flag.is_set():
-                        break
                     if "title" in ep and ep["title"]:
                         ep["title"] = translate_text_safe(ep["title"], CACHE)
                         modified = True
@@ -134,16 +125,13 @@ async def process_collection_parallel(collection, name, message):
     pool = ProcessPoolExecutor(max_workers=workers)
 
     while idx < len(ids):
-        if stop_event.is_set():
-            break
-
         batch_ids = ids[idx: idx + batch_size]
         batch_docs = list(collection.find({"_id": {"$in": batch_ids}}))
         if not batch_docs:
             break
 
         try:
-            future = loop.run_in_executor(pool, translate_batch_worker, batch_docs, stop_event)
+            future = loop.run_in_executor(pool, translate_batch_worker, batch_docs)
             results = await future
         except Exception:
             errors += len(batch_docs)
@@ -153,8 +141,6 @@ async def process_collection_parallel(collection, name, message):
 
         for _id, upd in results:
             try:
-                if stop_event.is_set():
-                    break
                 if upd:
                     collection.update_one({"_id": _id}, {"$set": upd})
                 done += 1
@@ -182,10 +168,7 @@ async def process_collection_parallel(collection, name, message):
                 f"{sys_info}"
             )
             try:
-                await message.edit_text(
-                    text,
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
-                )
+                await message.edit_text(text)
             except:
                 pass
             last_update = time.time()
@@ -194,28 +177,12 @@ async def process_collection_parallel(collection, name, message):
     elapsed_time = round(time.time() - start_time, 2)
     return total, done, errors, elapsed_time
 
-# ------------ Callback: iptal butonu ------------
-async def handle_stop(callback_query: CallbackQuery):
-    stop_event.set()
-    try:
-        await callback_query.message.edit_text("⛔ İşlem iptal edildi!")
-    except:
-        pass
-    try:
-        await callback_query.answer("Durdurma talimatı alındı.")
-    except:
-        pass
-
 # ------------ /cevir Komutu (Sadece owner) ------------
 @Client.on_message(filters.command("cevir") & filters.private & CustomFilters.owner)
 async def turkce_icerik(client: Client, message: Message):
-    global stop_event
-    stop_event.clear()
-
     start_msg = await message.reply_text(
         "🇹🇷 Türkçe çeviri hazırlanıyor.\nİlerleme tek mesajda gösterilecektir.",
-        parse_mode=enums.ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
+        parse_mode=enums.ParseMode.MARKDOWN
     )
 
     movie_total, movie_done, movie_errors, movie_time = await process_collection_parallel(
@@ -246,9 +213,3 @@ async def turkce_icerik(client: Client, message: Message):
         await start_msg.edit_text(summary, parse_mode=enums.ParseMode.MARKDOWN)
     except:
         pass
-
-# ------------ Callback query handler ------------
-@Client.on_callback_query()
-async def _cb(client: Client, query: CallbackQuery):
-    if query.data == "stop":
-        await handle_stop(query)
