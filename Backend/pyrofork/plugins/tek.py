@@ -71,194 +71,239 @@ async def handle_stop(callback_query: CallbackQuery):
         pass
 
 # ---------------- TRANSLATE WORKER (güncellenmiş) ----------------
-# ---------------- TRANSLATE WORKER ----------------
 def translate_batch_worker(batch_data):
-    """
-    Verilen batch belgelerini çevirir ve sonuçları döndürür.
-    Diziler için tüm bölümleri kontrol eder ve günceller.
-    """
     batch_docs = batch_data["docs"]
+    stop_flag_set = batch_data["stop_flag_set"]
+    if stop_flag_set:
+        return [], []
+
     CACHE = {}
     results = []
-    errors = []
-    translated_episode_count = 0
+    errors = []  # Hatalı veya çevrilemeyen içerikler için
 
     for doc in batch_docs:
+        if stop_flag_set:
+            break
         _id = doc.get("_id")
         upd = {}
-        title_main = doc.get("title") or doc.get("name") or "İsim yok"
-        is_series = bool(doc.get("seasons"))
         cevrildi = doc.get("cevrildi", False)
+        title_main = doc.get("title") or doc.get("name") or "İsim yok"
 
-        # Film ise ve çevrilmişse atla
-        if cevrildi and not is_series:
+        if cevrildi:
             continue
 
         try:
-            # 1. description çevirisi
+            # description çevirisi
             if doc.get("description"):
                 upd["description"] = translate_text_safe(doc["description"], CACHE)
             else:
-                if not is_series:
-                    errors.append(f"ID: {_id} | Film: {title_main} | Neden: 'description' alanı boş")
+                errors.append(f"ID: {_id} | Film/Dizi: {title_main} | Neden: 'description' alanı boş")
 
-            # 2. Dizi bölümleri çevirisi
-            if is_series:
-                seasons = doc.get("seasons", [])
-                updated = False
-                for season in seasons:
-                    for ep in season.get("episodes", []):
-                        if not ep.get("cevrildi", False) and ep.get("description"):
-                            ep["description"] = translate_text_safe(ep["description"], CACHE)
-                            ep["cevrildi"] = True
-                            translated_episode_count += 1
-                            updated = True
-                if updated:
-                    upd["seasons"] = seasons
+            # seasons / episodes çevirisi
+            seasons = doc.get("seasons")
+            if seasons:
+                for s in seasons:
+                    season_num = s.get("season_number", "?")
+                    for ep in s.get("episodes", []):
+                        if ep.get("cevrildi", False):
+                            continue
+                        ep_title = ep.get("title") or "İsim yok"
 
-            # 3. Film için üst seviye cevrildi bayrağı
-            if not is_series:
-                upd["cevrildi"] = True
+                        if ep.get("title"):
+                            ep["title"] = translate_text_safe(ep["title"], CACHE)
+                        else:
+                            errors.append(
+                                f"ID: {_id} | Dizi: {title_main} | Sezon: {season_num} | Bölüm: ? | Bölüm İsmi: {ep_title} | Neden: 'title' alanı boş"
+                            )
 
-            if upd:
-                results.append((_id, upd))
+                        if ep.get("overview"):
+                            ep["overview"] = translate_text_safe(ep["overview"], CACHE)
+                        else:
+                            errors.append(
+                                f"ID: {_id} | Dizi: {title_main} | Sezon: {season_num} | Bölüm: {ep.get('episode_number', '?')} | Bölüm İsmi: {ep_title} | Neden: 'overview' alanı boş"
+                            )
 
+                        ep["cevrildi"] = True
+                upd["seasons"] = seasons
+
+            upd["cevrildi"] = True
+            results.append((_id, upd))
         except Exception as e:
-            errors.append(f"ID: {_id} | {'Dizi' if is_series else 'Film'}: {title_main} | Hata: {str(e)}")
+            errors.append(f"ID: {_id} | Film/Dizi: {title_main} | Hata: {str(e)}")
 
-    return results, errors, translated_episode_count
-
+    return results, errors
 
 # ---------------- /cevir ----------------
 @Client.on_message(filters.command("cevir") & filters.private & filters.user(OWNER_ID))
 async def cevir(client: Client, message: Message):
-    start_msg = await message.reply_text("🇹🇷 Türkçe çeviri başlatılıyor...")
-    start_time = time.time()
+    global stop_event
+    if stop_event.is_set():
+        await message.reply_text("⛔ Zaten devam eden bir işlem var.")
+        return
+    stop_event.clear()
 
-    # Çevrilecek sayılar
-    movie_to_translate = movie_col.count_documents({"cevrildi": {"$ne": True}})
-    pipeline = [
-        {"$unwind": "$seasons"},
-        {"$unwind": "$seasons.episodes"},
-        {"$match": {"seasons.episodes.cevrildi": {"$ne": True}}},
-        {"$count": "total"}
-    ]
-    res = list(series_col.aggregate(pipeline))
-    series_to_translate = res[0]["total"] if res else 0
-    TOTAL_TO_TRANSLATE = movie_to_translate + series_to_translate
+    start_msg = await message.reply_text(
+        "🇹🇷 Türkçe çeviri hazırlanıyor...\nİlerleme tek mesajda gösterilecektir.",
+        parse_mode=enums.ParseMode.MARKDOWN,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]]),
+    )
 
-    # Koleksiyonlar
+    start_time = time.time()  # Başlangıç zamanı
+
     collections = [
-        {
-            "col": movie_col,
-            "name": "Filmler",
-            "ids": [d["_id"] for d in movie_col.find({"cevrildi": {"$ne": True}}, {"_id": 1})],
-            "translated_now": 0,
-            "errors_list": []
-        },
-        {
-            "col": series_col,
-            "name": "Diziler",
-            "ids": [d["_id"] for d in series_col.find({"seasons.episodes.cevrildi": {"$ne": True}}, {"_id": 1})],
-            "translated_now": 0,
-            "errors_list": []
-        }
+        {"col": movie_col, "name": "Filmler", "total": movie_col.count_documents({}), "done": 0, "errors_list": []},
+        {"col": series_col, "name": "Bölümler", "total_episodes": 0, "done_episodes": 0, "errors_list": []},
     ]
+
+    # Diziler için toplam bölüm sayısını hesapla
+    series_col_data = collections[1]
+    total_eps = 0
+    for doc in series_col.find({}, {"seasons.episodes": 1}):
+        for season in doc.get("seasons", []):
+            total_eps += len(season.get("episodes", []))
+    series_col_data["total_episodes"] = total_eps
 
     batch_size = 50
-    pool = ThreadPoolExecutor(max_workers=4)
+    workers = 4
+    pool = ThreadPoolExecutor(max_workers=workers)
     loop = asyncio.get_event_loop()
-    last_update = 0
+    last_update = time.time()
+    update_interval = 10  # saniye
 
     try:
         for c in collections:
             col = c["col"]
-            ids = c["ids"]
+            ids = [d["_id"] for d in col.find({}, {"_id": 1})]
             idx = 0
 
             while idx < len(ids):
+                if stop_event.is_set():
+                    break
+
                 batch_ids = ids[idx: idx + batch_size]
                 batch_docs = list(col.find({"_id": {"$in": batch_ids}}))
+                worker_data = {"docs": batch_docs, "stop_flag_set": stop_event.is_set()}
 
-                # Worker fonksiyonunu çalıştır
-                results, errors, ep_count = await loop.run_in_executor(
-                    pool,
-                    translate_batch_worker,
-                    {"docs": batch_docs}
-                )
-
+                results, errors = await loop.run_in_executor(pool, translate_batch_worker, worker_data)
                 c["errors_list"].extend(errors)
 
+                # Veritabanına yaz
                 for _id, upd in results:
-                    if upd:
-                        col.update_one({"_id": _id}, {"$set": upd})
-
-                # Çevrilen sayısını güncelle
-                if c["name"] == "Filmler":
-                    c["translated_now"] += len(results)
-                else:
-                    c["translated_now"] += ep_count
+                    try:
+                        if upd:
+                            col.update_one({"_id": _id}, {"$set": upd})
+                    except:
+                        c["errors_list"].append(f"ID: {_id} | DB Güncelleme Hatası")
 
                 idx += len(batch_ids)
 
-                # İlerleme güncellemesi
-                elapsed = time.time() - start_time
-                total_done = sum(x["translated_now"] for x in collections)
-                remaining = TOTAL_TO_TRANSLATE - total_done
-                eta = int((remaining * elapsed / total_done)) if total_done else 0
+                # İlerleme sayısını güncelle
+                if c["name"] == "Bölümler":
+                    done_eps = 0
+                    for doc in col.aggregate([
+                        {"$unwind": "$seasons"},
+                        {"$unwind": "$seasons.episodes"},
+                        {"$match": {"seasons.episodes.cevrildi": True}},
+                        {"$count": "done"}
+                    ]):
+                        done_eps = doc["done"]
+                    c["done_episodes"] = done_eps
+                else:
+                    c["done"] = col.count_documents({"cevrildi": True})
 
-                if time.time() - last_update >= 10:
+                # Sistem durumu
+                cpu = round(psutil.cpu_percent(interval=0.1), 1)
+                ram_percent = round(psutil.virtual_memory().percent, 1)
+
+                # Zaman ve ETA hesaplama
+                elapsed_time = time.time() - start_time
+                elapsed_h, rem = divmod(int(elapsed_time), 3600)
+                elapsed_m, elapsed_s = divmod(rem, 60)
+                elapsed_time_str = f"{elapsed_h}h{elapsed_m}m{elapsed_s}s"
+
+                total_done = sum(coll.get("done_episodes", coll.get("done", 0)) for coll in collections)
+                total_to_translate = sum(coll.get("total_episodes", coll.get("total", 0)) for coll in collections)
+                if total_done > 0:
+                    eta_sec = (total_to_translate - total_done) * (elapsed_time / total_done)
+                else:
+                    eta_sec = 0
+                eta_h, rem = divmod(int(eta_sec), 3600)
+                eta_m, eta_s = divmod(rem, 60)
+                eta_str = f"{eta_h}h{eta_m}m{eta_s}s"
+
+                # İlerleme mesajını güncelle
+                if time.time() - last_update >= update_interval or idx >= len(ids):
                     last_update = time.time()
-                    cpu = psutil.cpu_percent(0.1)
-                    ram = psutil.virtual_memory().percent
+                    total_remaining = total_to_translate - total_done
+                    total_errors = sum(len(c["errors_list"]) for c in collections)
 
-                    await start_msg.edit_text(
-                        f"🇹🇷 Türkçe çeviri devam ediyor...\n\n"
-                        f"Toplam içerik: {TOTAL_TO_TRANSLATE}\n"
+                    progress_text = (
+                        f"🇹🇷 Türkçe çeviri hazırlanıyor...\n\n"
+                        f"Toplam çevrilecek içerik: {total_to_translate}\n"
                         f"Çevrilen: {total_done}\n"
-                        f"Kalan: {remaining}\n"
-                        f"{progress_bar(total_done, TOTAL_TO_TRANSLATE)}\n\n"
-                        f"Süre: `{int(elapsed)}s` | ETA: `{eta}s`\n"
-                        f"CPU: `{cpu}%` | RAM: `{ram}%`",
-                        parse_mode=enums.ParseMode.MARKDOWN
+                        f"Kalan: {total_remaining}\n"
+                        f"Hatalı: {total_errors}\n"
+                        f"{progress_bar(total_done, total_to_translate)}\n\n"
+                        f"Süre: `{elapsed_time_str}` (`{eta_str}`)\n"
+                        f"CPU: `{cpu}%` | RAM: `{ram_percent}%`"
                     )
+                    try:
+                        await start_msg.edit_text(
+                            progress_text,
+                            parse_mode=enums.ParseMode.MARKDOWN,
+                            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]]),
+                        )
+                    except:
+                        pass
     finally:
         pool.shutdown(wait=False)
 
-    # Genel Özet
-    total_done = sum(c["translated_now"] for c in collections)
-    total_errors = sum(len(c["errors_list"]) for c in collections)
+    # Sonuç özeti ve log dosyası
+    async def send_final_summary():
+        end_time = time.time()
+        total_duration = end_time - start_time
 
-    await start_msg.edit_text(
-        f"📊 **Genel Özet**\n\n"
-        f"Toplam: {TOTAL_TO_TRANSLATE}\n"
-        f"Çevrilen: {total_done}\n"
-        f"Kalan: {TOTAL_TO_TRANSLATE - total_done}\n"
-        f"Hatalı: {total_errors}",
-        parse_mode=enums.ParseMode.MARKDOWN
-    )
+        total_movies = collections[0].get("done", 0)
+        total_episodes = collections[1].get("done_episodes", 0)
+        total_done = total_movies + total_episodes
+        total_to_translate = collections[0]["total"] + collections[1]["total_episodes"]
+        total_remaining = total_to_translate - total_done
+        total_errors = sum(len(c["errors_list"]) for c in collections)
 
-    # Hata log dosyası
-    hata_icerigi = []
-    for c in collections:
-        if c.get("errors_list"):
-            hata_icerigi.append(f"*** {c['name']} Hataları ***")
-            hata_icerigi.extend(c["errors_list"])
-            hata_icerigi.append("")
+        h, rem = divmod(int(total_duration), 3600)
+        m, s = divmod(rem, 60)
+        duration_str = f"{h}h{m}m{s}s"
 
-    if hata_icerigi:
-        log_path = os.path.join(os.getcwd(), "cevir_hatalari.txt")
-        with open(log_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(hata_icerigi))
+        final_text = (
+            "📊 **Genel Özet**\n\n"
+            f"Toplam çevrilecek içerik: {total_to_translate}\n"
+            f"Çevrilen: {total_done}\n"
+            f"Kalan: {total_remaining}\n"
+            f"Hatalı: {total_errors}\n"
+            f"Süre: {duration_str}"
+        )
 
-        try:
-            await client.send_document(
-                chat_id=OWNER_ID,
-                document=log_path,
-                caption="⛔ Çeviri sırasında oluşan hatalar"
-            )
-        except Exception as e:
-            print("Telegram gönderim hatası:", e)
+        await start_msg.edit_text(final_text, parse_mode=enums.ParseMode.MARKDOWN)
+
+        # Hataları dosya olarak gönder
+        hata_icerigi = []
+        for c in collections:
+            if c["errors_list"]:
+                hata_icerigi.append(f"*** {c['name']} Hataları ***")
+                hata_icerigi.extend(c["errors_list"])
+                hata_icerigi.append("")  # boş satır
+
+        if hata_icerigi:
+            log_path = "cevirhatalari.txt"
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(hata_icerigi))
+            try:
+                await client.send_document(chat_id=OWNER_ID, document=log_path,
+                                           caption="⛔ Çeviri sırasında hatalar oluştu / kalan içerikler")
+            except:
+                pass
+
+    await send_final_summary()
 
 # ---------------- /cevirekle ----------------
 @Client.on_message(filters.command("cevirekle") & filters.private & filters.user(OWNER_ID))
@@ -266,30 +311,25 @@ async def cevirekle(client: Client, message: Message):
     status = await message.reply_text("🔄 'cevrildi' alanları ekleniyor...")
     total_updated = 0
 
-    # 1. Filmler için Üst Seviye 'cevrildi: true' ekleme
-    col = movie_col
-    docs_cursor = col.find({"cevrildi": {"$ne": True}}, {"_id": 1})
-    bulk_ops = [UpdateOne({"_id": doc["_id"]}, {"$set": {"cevrildi": True}}) for doc in docs_cursor]
-    
-    if bulk_ops:
-        res = col.bulk_write(bulk_ops)
-        total_updated += res.modified_count
+    for col in (movie_col, series_col):
+        # Üst seviye belgeler
+        docs_cursor = col.find({"cevrildi": {"$ne": True}}, {"_id": 1})
+        bulk_ops = [UpdateOne({"_id": doc["_id"]}, {"$set": {"cevrildi": True}}) for doc in docs_cursor]
 
-    # 2. Diziler için SADECE BÖLÜMLERE 'cevrildi: true' ekleme
-    col = series_col
-    bulk_ops = []
-    docs_cursor = col.find({"seasons.episodes.cevrildi": {"$ne": True}}, {"_id": 1})
-    for doc in docs_cursor:
-        bulk_ops.append(
-            UpdateOne(
-                {"_id": doc["_id"]},
-                {"$set": {"seasons.$[].episodes.$[].cevrildi": True}}
-            )
-        )
+        # Dizi bölümleri için
+        if col == series_col:
+            docs_cursor = col.find({"seasons.episodes.cevrildi": {"$ne": True}}, {"_id": 1})
+            for doc in docs_cursor:
+                bulk_ops.append(
+                    UpdateOne(
+                        {"_id": doc["_id"]},
+                        {"$set": {"seasons.$[].episodes.$[].cevrildi": True}}
+                    )
+                )
 
-    if bulk_ops:
-        res = col.bulk_write(bulk_ops)
-        total_updated += res.modified_count
+        if bulk_ops:
+            res = col.bulk_write(bulk_ops)
+            total_updated += res.modified_count
 
     await status.edit_text(f"✅ 'cevrildi' alanları eklendi.\nToplam güncellenen kayıt: {total_updated}")
 
