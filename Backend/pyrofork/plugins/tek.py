@@ -71,6 +71,7 @@ async def handle_stop(callback_query: CallbackQuery):
         pass
 
 # ---------------- TRANSLATE WORKER (güncellenmiş) ----------------
+# ---------------- TRANSLATE WORKER ----------------
 def translate_batch_worker(batch_data):
     """
     Verilen batch belgelerini çevirir ve sonuçları döndürür.
@@ -87,6 +88,11 @@ def translate_batch_worker(batch_data):
         upd = {}
         title_main = doc.get("title") or doc.get("name") or "İsim yok"
         is_series = bool(doc.get("seasons"))
+        cevrildi = doc.get("cevrildi", False)
+
+        # Film ise ve çevrilmişse atla
+        if cevrildi and not is_series:
+            continue
 
         try:
             # 1. description çevirisi
@@ -122,14 +128,14 @@ def translate_batch_worker(batch_data):
 
     return results, errors, translated_episode_count
 
+
 # ---------------- /cevir ----------------
 @Client.on_message(filters.command("cevir") & filters.private & filters.user(OWNER_ID))
 async def cevir(client: Client, message: Message):
     start_msg = await message.reply_text("🇹🇷 Türkçe çeviri başlatılıyor...")
-
     start_time = time.time()
 
-    # -------- Çevrilecek sayılar --------
+    # Çevrilecek sayılar
     movie_to_translate = movie_col.count_documents({"cevrildi": {"$ne": True}})
     pipeline = [
         {"$unwind": "$seasons"},
@@ -141,7 +147,7 @@ async def cevir(client: Client, message: Message):
     series_to_translate = res[0]["total"] if res else 0
     TOTAL_TO_TRANSLATE = movie_to_translate + series_to_translate
 
-    # -------- Koleksiyonlar --------
+    # Koleksiyonlar
     collections = [
         {
             "col": movie_col,
@@ -178,7 +184,7 @@ async def cevir(client: Client, message: Message):
                 results, errors, ep_count = await loop.run_in_executor(
                     pool,
                     translate_batch_worker,
-                    {"docs": batch_docs}  # artık stop_event yok
+                    {"docs": batch_docs}
                 )
 
                 c["errors_list"].extend(errors)
@@ -219,7 +225,7 @@ async def cevir(client: Client, message: Message):
     finally:
         pool.shutdown(wait=False)
 
-    # -------- Genel Özet --------
+    # Genel Özet
     total_done = sum(c["translated_now"] for c in collections)
     total_errors = sum(len(c["errors_list"]) for c in collections)
 
@@ -232,7 +238,7 @@ async def cevir(client: Client, message: Message):
         parse_mode=enums.ParseMode.MARKDOWN
     )
 
-    # -------- Hata log dosyası --------
+    # Hata log dosyası
     hata_icerigi = []
     for c in collections:
         if c.get("errors_list"):
@@ -241,7 +247,6 @@ async def cevir(client: Client, message: Message):
             hata_icerigi.append("")
 
     if hata_icerigi:
-        import os
         log_path = os.path.join(os.getcwd(), "cevir_hatalari.txt")
         with open(log_path, "w", encoding="utf-8") as f:
             f.write("\n".join(hata_icerigi))
@@ -254,7 +259,6 @@ async def cevir(client: Client, message: Message):
             )
         except Exception as e:
             print("Telegram gönderim hatası:", e)
-
 
 # ---------------- /cevirekle ----------------
 @Client.on_message(filters.command("cevirekle") & filters.private & filters.user(OWNER_ID))
