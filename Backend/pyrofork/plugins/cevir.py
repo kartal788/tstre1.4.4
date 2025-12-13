@@ -1,7 +1,7 @@
-# bot_full.py
+# bot_async.py
 import asyncio
 import time
-from pyrogram import Client, filters, enums
+from pyrogram import Client, filters, enums, idle
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message
 from pymongo import MongoClient, UpdateOne
 from deep_translator import GoogleTranslator
@@ -267,7 +267,7 @@ async def send_statistics(client: Client, message: Message):
         ]):
             genre_stats[doc["_id"]]["dizi"] = doc["count"]
 
-        cpu = round(cpu_percent(interval=1), 1)
+        cpu = round(psutil.cpu_percent(interval=1), 1)
         ram = round(psutil.virtual_memory().percent, 1)
         disk = psutil.disk_usage(DOWNLOAD_DIR)
         free_disk = round(disk.free / (1024 ** 3), 2)
@@ -306,5 +306,14 @@ async def on_callback(client: Client, query: CallbackQuery):
     elif query.data == "stop_tur":
         await handle_stop(query, tur_stop_event)
 
-# ---------------- RUN ----------------
-app.run()
+# ---------------- BOT START (ASGI / Docker uyumlu) ----------------
+async def start_bot():
+    await app.start()
+    print("Bot başlatıldı...")
+    await idle()
+    await app.stop()
+    print("Bot durduruldu.")
+
+if __name__ == "__main__":
+    # Lokal terminal için asyncio.run
+    asyncio.run(start_bot())
