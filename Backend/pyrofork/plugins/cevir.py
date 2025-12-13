@@ -2,8 +2,9 @@ import asyncio
 import time
 import os
 import multiprocessing
-import json # JSON dönüşümü için eklendi
-from concurrent.futures import ProcessPoolExecutor, TimeoutError, BrokenProcessPool, Future
+import json 
+import sys # sys.exc_info() için eklendi
+from concurrent.futures import ProcessPoolExecutor, TimeoutError, Future
 
 # Kütüphane İçe Aktarımları
 from pyrogram import Client, filters, enums
@@ -13,10 +14,21 @@ import pymongo
 from deep_translator import GoogleTranslator
 import psutil
 import traceback 
-from bson.objectid import ObjectId # MongoDB ID'leri için
-from datetime import datetime # Tarih/Zaman nesneleri için
+from bson.objectid import ObjectId 
+from datetime import datetime 
 
-# ------------ ÖZEL FİLTRE İÇE AKTARIMI ------------
+# Python sürümüne göre BrokenProcessPool'u güvenli şekilde içe aktarma
+try:
+    from concurrent.futures import BrokenProcessPool
+except ImportError:
+    # Python 3.3+'ta olmalı, ama ortam bozuksa/farklıysa
+    class BrokenProcessPool(Exception):
+        """Yedek sınıf tanımı"""
+        pass
+    print("UYARI: BrokenProcessPool doğrudan içe aktarılamadı. Manuel sınıf tanımlandı.")
+
+
+# ------------ ÖZEL FİLTRE İÇE AKTARIMI (Değişmedi) ------------
 try:
     from Backend.helper.custom_filter import CustomFilters 
 except ImportError:
@@ -31,6 +43,7 @@ except ImportError:
         owner = filters.create(owner_filter)
 # -------------------------------------------------
 
+
 # Sabit Çeviri Durumu Etiketi
 TRANSLATED_STATUS_FIELD = "translated_status"
 TRANSLATED_STATUS_VALUE = "cevrildi"
@@ -38,7 +51,7 @@ TRANSLATED_STATUS_VALUE = "cevrildi"
 # GLOBAL STOP EVENT
 stop_event = asyncio.Event()
 
-# ------------ DATABASE Bağlantısı ------------
+# ------------ DATABASE Bağlantısı (Değişmedi) ------------
 db_raw = os.getenv("DATABASE", "")
 if not db_raw:
     raise Exception("DATABASE ortam değişkeni bulunamadı!")
@@ -54,14 +67,15 @@ else:
 
 try:
     client_db = MongoClient(MONGO_URL.strip()) 
-    db_name = client_db.list_database_names()[0]
+    # Listeleme, birden fazla DB varsa ilkini kullanır
+    db_name = client_db.list_database_names()[0] 
     db = client_db[db_name]
     movie_col = db["movie"]
     series_col = db["tv"]
 except Exception as e:
     raise Exception(f"MongoDB bağlantı hatası ({MONGO_URL.strip()} için): {e}")
 
-# ------------ Dinamik Worker & Batch Ayarı ------------
+# ------------ Dinamik Worker & Batch Ayarı (Değişmedi) ------------
 def dynamic_config():
     """Çeviri hızını artırmak için dinamik ayarlar."""
     cpu_count = multiprocessing.cpu_count()
@@ -78,7 +92,7 @@ def dynamic_config():
         
     return workers, batch
 
-# ------------ Güvenli Çeviri Fonksiyonu ------------
+# ------------ Güvenli Çeviri Fonksiyonu (Değişmedi) ------------
 def translate_text_safe(text, cache):
     """Deep Translator ile güvenli çeviri, önbellek kullanarak tekrarları engeller."""
     if not text or str(text).strip() == "":
@@ -92,7 +106,7 @@ def translate_text_safe(text, cache):
     cache[text] = tr
     return tr
 
-# ------------ BSON/ObjectId Temizleyici (KRİTİK) ------------
+# ------------ BSON/ObjectId Temizleyici (Değişmedi) ------------
 def clean_bson_types(doc):
     """
     MongoDB dökümanlarını worker'a göndermeden önce JSON/Python uyumlu tiplere dönüştürür.
@@ -115,7 +129,7 @@ def clean_bson_types(doc):
     else:
         return doc
 
-# ------------ Progress Bar ve Zaman Formatlama Yardımcı Fonksiyonları ------------
+# ------------ Progress Bar ve Zaman Formatlama Yardımcı Fonksiyonları (Değişmedi) ------------
 def progress_bar(current, total, bar_length=12):
     if total == 0:
         return "[⬡" + "⬡"*(bar_length-1) + "] 0.00%"
@@ -135,7 +149,7 @@ def format_time_custom(total_seconds):
     
     return f"{int(hours)}s{int(minutes)}d{int(seconds):02}s"
 
-# ------------ Hata Loglama Fonksiyonu (Telegram'a Gönderim) ------------
+# ------------ Hata Loglama Fonksiyonu (Değişmedi) ------------
 async def log_error_to_telegram(client: Client, media_type: str, item_id, error_message: str):
     """Hata detaylarını Telegram'a log mesajı olarak gönderir."""
     
@@ -147,7 +161,6 @@ async def log_error_to_telegram(client: Client, media_type: str, item_id, error_
         f"**Tip**: `{media_type.upper()}`\n"
         f"**ID**: `{item_id}`\n"
         f"**Hata**: `{error_msg_limited}`\n\n"
-        f"Bu hata büyük ihtimalle döküman yapısından veya Worker/Multiprocessing hatasından kaynaklanmaktadır."
     )
     
     try:
@@ -155,7 +168,7 @@ async def log_error_to_telegram(client: Client, media_type: str, item_id, error_
     except Exception as e:
         print(f"Telegram'a log gönderme hatası (OWNER_ID: {log_chat_id}): {e}")
 
-# ------------ Worker: batch çevirici (Hata Kaydı Eklendi) ------------
+# ------------ Worker: batch çevirici (Değişmedi) ------------
 def translate_batch_worker(batch_data):
     """
     Çoklu süreçte çalıştırılacak işçi fonksiyonu.
@@ -172,7 +185,9 @@ def translate_batch_worker(batch_data):
     error_details = []
 
     for doc in batch_docs:
-        # Bu aşamada dökümanlar temizlenmiş, yani sadece yapısal hatalar kalmış olmalı.
+        if stop_flag_set:
+            break
+
         _id = doc.get("_id")
         upd = {}
         needs_update = False
@@ -192,11 +207,10 @@ def translate_batch_worker(batch_data):
             if media_type == 'tv' and seasons and isinstance(seasons, list):
                 modified = False
                 for season in seasons:
-                    # Sezon numarası kontrolü (zorunlu olmasa da temiz bir yapı için)
                     if not isinstance(season, dict): continue
                     
                     eps = season.get("episodes", []) or []
-                    if not isinstance(eps, list): continue # episodes listesi yoksa atla
+                    if not isinstance(eps, list): continue 
                         
                     for ep in eps:
                         if stop_flag_set:
@@ -231,14 +245,13 @@ def translate_batch_worker(batch_data):
             error_details.append({
                 "media_type": media_type,
                 "id": _id,
-                "error": str(e) + "\n" + traceback.format_exc() # Detaylı traceback eklendi
+                "error": str(e) + "\n" + traceback.format_exc() 
             })
             continue
 
     return {"results": results, "error_details": error_details}
 
-# ------------ Diğer Yardımcı Fonksiyonlar ve Ana İşleyiciler (Değişmedi) ------------
-
+# ------------ Yardımcı Fonksiyon: Çevrilecek Sayıyı Hesapla (Değişmedi) ------------
 async def get_translation_count():
     movie_count = movie_col.count_documents({TRANSLATED_STATUS_FIELD: {"$ne": TRANSLATED_STATUS_VALUE}})
     
@@ -254,20 +267,29 @@ async def get_translation_count():
 
     return movie_count, series_to_translate_count
 
+# ------------ Yardımcı Fonksiyon: Toplu Durum Güncelleme (Düzeltildi) ------------
 async def bulk_status_update(collection, action):
+    """
+    KRİTİK DÜZELTME: Movie koleksiyonunda array update (seasons.$[]) kullanılmayacak.
+    """
+    
     if collection.name == "movie":
         if action == "ekle":
+            # Filmler için sadece ana seviye alan güncellenir
             update_op = {"$set": {TRANSLATED_STATUS_FIELD: TRANSLATED_STATUS_VALUE}}
             msg_action = "etiketlendi"
         else:
             update_op = {"$unset": {TRANSLATED_STATUS_FIELD: ""}}
             msg_action = "etiketi kaldırıldı"
         
+        # ArrayFilter'a gerek yok, update_many normal çalışır.
         update_result = collection.update_many({}, update_op)
+        
         return f"✅ **{collection.name}** koleksiyonundaki {update_result.modified_count} içerik çevrilmiş olarak {msg_action}."
 
     elif collection.name == "tv":
         if action == "ekle":
+            # Diziler için ana ve bölüm seviyeleri güncellenir.
             update_op = {"$set": {
                 TRANSLATED_STATUS_FIELD: TRANSLATED_STATUS_VALUE, 
                 f"seasons.$[].episodes.$[].{TRANSLATED_STATUS_FIELD}": TRANSLATED_STATUS_VALUE
@@ -280,11 +302,15 @@ async def bulk_status_update(collection, action):
             }}
             msg_action = "etiketi kaldırıldı"
             
-        update_result = collection.update_many({}, update_op)
+        # tv dökümanları mutlaka 'seasons' içerdiği için bu güvenlidir.
+        update_result = collection.update_many({}, update_op) 
+        
         return f"✅ **{collection.name}** koleksiyonundaki {update_result.modified_count} içerik çevrilmiş olarak {msg_action} (Bölümler dahil)."
+
     else:
         return "Geçersiz koleksiyon adı."
 
+# ------------ Callback: iptal butonu (Değişmedi) ------------
 async def handle_stop(callback_query: CallbackQuery):
     stop_event.set()
     try:
@@ -297,6 +323,7 @@ async def handle_stop(callback_query: CallbackQuery):
     except Exception:
         pass
 
+# ------------ /cevir Komutu (Ana İşleyici - Değişmedi) ------------
 @Client.on_message(filters.command("cevir") & filters.private & CustomFilters.owner) 
 async def turkce_icerik_main(client: Client, message: Message):
     command_parts = message.text.split()
@@ -400,7 +427,7 @@ async def start_translation(client: Client, message: Message):
                 cleaned_docs = clean_bson_types(batch_docs)
 
                 worker_data = {
-                    "docs": cleaned_docs, # Temizlenmiş dökümanları gönder
+                    "docs": cleaned_docs, 
                     "stop_flag_set": stop_event.is_set()
                 }
 
@@ -408,7 +435,6 @@ async def start_translation(client: Client, message: Message):
                     loop = asyncio.get_event_loop()
                     future = loop.run_in_executor(pool, translate_batch_worker, worker_data)
                     
-                    # 5 saniyelik timeout, worker'ın anında ölmesini yakalamak için
                     worker_output = await asyncio.wait_for(future, timeout=5.0) 
                     
                     results = worker_output["results"]
@@ -448,18 +474,15 @@ async def start_translation(client: Client, message: Message):
 
                 # SONUÇLARI VERİTABANINA YAZ (Toplu Yazma)
                 update_requests = []
-                # Başarılı sayılan dökümanları bulmak için hata ID'lerini kullan
                 error_ids = {d.get('id') for d in worker_output.get("error_details", [])}
                 
-                processed_in_batch = set()
-
+                # Başarılı olan dökümanları bul ve güncelleme isteği oluştur
                 for _id, upd in results:
-                    processed_in_batch.add(_id)
                     if stop_event.is_set():
                         break
                     
                     if upd:
-                        # Eğer ID MongoDB ObjectId ise, pymongo'ya göndermeden önce tekrar ObjectId'e dönüştürün
+                        # String ID'yi tekrar MongoDB ObjectId'ye dönüştürme
                         try:
                              final_id = ObjectId(_id)
                         except:
@@ -469,22 +492,16 @@ async def start_translation(client: Client, message: Message):
                             pymongo.UpdateOne({"_id": final_id}, {"$set": upd})
                         )
                 
-                # Batch'teki her döküman, hata listesinde yoksa başarılıdır
-                for doc in batch_docs:
-                    doc_id = str(doc.get("_id"))
-                    if doc_id not in error_ids:
-                        c["done"] += 1
+                # Başarılı olan döküman sayısını hesapla
+                successful_updates_in_batch = len(results)
+                c["done"] += successful_updates_in_batch
                 
-                # Hata listesindeki dökümanlar için done sayısını geri al
-                # Bu kısım, yukarıdaki logic ile zaten halledildi, sadece koruma amaçlı
-                # c["done"] -= len(error_ids)
-
                 if update_requests:
                     try:
                         col.bulk_write(update_requests, ordered=False)
                     except Exception as e:
                         print(f"Toplu DB Yazma Hatası: {e}")
-                        # Toplu yazma hatasında, batch'teki tüm başarılı sayılanları geri al
+                        # Toplu yazma hatası durumunda başarı sayısını geri alıp hata sayacına ekle
                         c["errors"] += len(update_requests)
                         c["done"] -= len(update_requests)
                         await log_error_to_telegram(client, name, "BULK_WRITE_ERROR", str(e))
@@ -492,7 +509,7 @@ async def start_translation(client: Client, message: Message):
                 # İndeks ilerletme
                 idx += len(batch_ids)
                 
-                # İlerleme mesajı güncelleme... (önceki kodla aynı)
+                # İlerleme mesajı güncelleme
                 if time.time() - last_update > update_interval or idx >= len(ids) or stop_event.is_set():
                     
                     text = ""
@@ -533,7 +550,7 @@ async def start_translation(client: Client, message: Message):
                             parse_mode=enums.ParseMode.MARKDOWN,
                             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
                         )
-                    except Exception as e:
+                    except Exception:
                         pass
                     
                     last_update = time.time()
@@ -572,7 +589,7 @@ async def start_translation(client: Client, message: Message):
     except:
         pass
 
-# ------------ Callback query handler ------------
+# ------------ Callback query handler (Değişmedi) ------------
 @Client.on_callback_query()
 async def _cb(client: Client, query: CallbackQuery):
     if query.data == "stop":
