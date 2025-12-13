@@ -316,16 +316,28 @@ async def cevirekle(client: Client, message: Message):
 async def cevirkaldir(client: Client, message: Message):
     status = await message.reply_text("🔄 'cevrildi' alanları kaldırılıyor...")
     total_updated = 0
+
+    # 1. FİLMLER için 'cevrildi' alanlarını kaldır
+    # 'cevrildi' bayrağı olan tüm filmleri bul
+    docs_cursor = movie_col.find({"cevrildi": True}, {"_id": 1})
+    
+    # Her film için $unset işlemi oluştur
+    bulk_ops = [
+        UpdateOne({"_id": doc["_id"]}, {"$unset": {"cevrildi": ""}}) 
+        for doc in docs_cursor
+    ]
+
+    if bulk_ops:
+        res = movie_col.bulk_write(bulk_ops)
+        total_updated += res.modified_count
+
+    # 2. DİZİLER için 'seasons.episodes.cevrildi' alanlarını kaldır
     bulk_ops = []
     
-    # 1. Filmler için Üst Seviye 'cevrildi' kaldırma
-    col = movie_col
-    docs_cursor = col.find({"cevrildi": True}, {"_id": 1})
-    bulk_ops.extend([UpdateOne({"_id": doc["_id"]}, {"$unset": {"cevrildi": ""}}) for doc in docs_cursor])
+    # 'cevrildi' bayrağı olan bölümleri içeren tüm dizileri bul
+    docs_cursor = series_col.find({"seasons.episodes.cevrildi": True}, {"_id": 1})
     
-    # 2. Diziler için SADECE Bölüm 'cevrildi' kaldırma
-    col = series_col
-    docs_cursor = col.find({"seasons.episodes.cevrildi": True}, {"_id": 1})
+    # Her dizi için tüm bölümlerdeki 'cevrildi' alanını kaldıran $unset işlemi oluştur
     for doc in docs_cursor:
         bulk_ops.append(
             UpdateOne(
@@ -333,20 +345,11 @@ async def cevirkaldir(client: Client, message: Message):
                 {"$unset": {"seasons.$[].episodes.$[].cevrildi": ""}}
             )
         )
-        
-    if bulk_ops:
-        res = movie_col.bulk_write(bulk_ops[:len(docs_cursor)]) # Filmler için (Tahmini bir limit, daha iyi yönetilebilir)
-        total_updated += res.modified_count
-        
-    # Sadece bir örnekti. Daha temiz yönetim için her koleksiyonu ayrı ayrı çalıştırın:
-    
-    res = movie_col.bulk_write(bulk_ops[:len([d for d in movie_col.find({"cevrildi": True}, {"_id": 1})])])
-    total_updated += res.modified_count
 
-    if len(bulk_ops) > total_updated:
-        res = series_col.bulk_write(bulk_ops[total_updated:])
+    if bulk_ops:
+        res = series_col.bulk_write(bulk_ops)
         total_updated += res.modified_count
-        
+
     await status.edit_text(f"✅ 'cevrildi' alanları kaldırıldı.\nToplam güncellenen kayıt: {total_updated}")
 
 
