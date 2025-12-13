@@ -5,12 +5,12 @@ import os
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
+import psutil
 
 from pyrogram import Client, filters, enums
 from pyrogram.types import Message
 from pymongo import MongoClient, UpdateOne
 from deep_translator import GoogleTranslator
-import psutil
 
 from Backend.helper.custom_filter import CustomFilters  # Owner filtresi için
 
@@ -109,19 +109,19 @@ async def tur_ve_platform_duzelt(client: Client, message: Message):
     last_update = 0
 
     for col, name in collections:
-        docs_cursor = col.find({}, {"_id": 1, "genres": 1, "telegram": 1, "seasons": 1})
+        docs_cursor = col.find({}, {"_id":1,"genres":1,"telegram":1,"seasons":1})
         bulk_ops = []
         for doc in docs_cursor:
             doc_id = doc["_id"]
             genres = doc.get("genres", [])
             updated = False
-            new_genres = [genre_map.get(g, g) for g in genres]
+            new_genres = [genre_map.get(g,g) for g in genres]
             if new_genres != genres:
                 updated = True
             genres = new_genres
 
             for t in doc.get("telegram", []):
-                name_field = t.get("name", "").lower()
+                name_field = t.get("name","").lower()
                 for key, genre_name in platform_genre_map.items():
                     if key.lower() in name_field and genre_name not in genres:
                         genres.append(genre_name)
@@ -130,14 +130,14 @@ async def tur_ve_platform_duzelt(client: Client, message: Message):
             for season in doc.get("seasons", []):
                 for ep in season.get("episodes", []):
                     for t in ep.get("telegram", []):
-                        name_field = t.get("name", "").lower()
+                        name_field = t.get("name","").lower()
                         for key, genre_name in platform_genre_map.items():
                             if key.lower() in name_field and genre_name not in genres:
                                 genres.append(genre_name)
                                 updated = True
 
             if updated:
-                bulk_ops.append(UpdateOne({"_id": doc_id}, {"$set": {"genres": genres}}))
+                bulk_ops.append(UpdateOne({"_id": doc_id}, {"$set":{"genres":genres}}))
                 total_fixed += 1
 
             if time.time() - last_update > 5:
@@ -166,8 +166,8 @@ def translate_batch_worker(batch):
     for doc in batch:
         _id = doc.get("_id")
         upd = {}
+        is_tv = doc.get("media_type")=="tv"
         already_translated = doc.get("cevrildi", False)
-        is_tv = doc.get("media_type") == "tv"
 
         if not is_tv and already_translated:
             continue
@@ -208,15 +208,15 @@ async def process_collection_parallel(collection, name, message):
     errors = 0
     start_time = time.time()
     last_update = 0
-    ids_cursor = collection.find({}, {"_id": 1})
+    ids_cursor = collection.find({}, {"_id":1})
     ids = [d["_id"] for d in ids_cursor]
     idx = 0
     workers, batch_size = dynamic_config()
     pool = ProcessPoolExecutor(max_workers=workers)
 
     while idx < len(ids):
-        batch_ids = ids[idx: idx + batch_size]
-        batch_docs = list(collection.find({"_id": {"$in": batch_ids}}))
+        batch_ids = ids[idx: idx+batch_size]
+        batch_docs = list(collection.find({"_id":{"$in":batch_ids}}))
         if not batch_docs:
             break
         try:
@@ -227,26 +227,29 @@ async def process_collection_parallel(collection, name, message):
             idx += len(batch_ids)
             await asyncio.sleep(1)
             continue
+
         for _id, upd in results:
             try:
                 if upd:
-                    collection.update_one({"_id": _id}, {"$set": upd})
+                    collection.update_one({"_id": _id},{"$set": upd})
                 done += 1
             except Exception:
                 errors += 1
+
         idx += len(batch_ids)
         elapsed = time.time() - start_time
-        speed = done / elapsed if elapsed > 0 else 0
+        speed = done / elapsed if elapsed>0 else 0
         remaining = total - done
-        eta = remaining / speed if speed > 0 else float("inf")
+        eta = remaining / speed if speed>0 else float("inf")
         eta_str = time.strftime("%H:%M:%S", time.gmtime(eta)) if math.isfinite(eta) else "∞"
         cpu = psutil.cpu_percent(interval=None)
         ram_percent = psutil.virtual_memory().percent
         sys_info = f"CPU: {cpu}% | RAM: %{ram_percent}"
+
         if time.time() - last_update > 30 or idx >= len(ids):
             text = (
                 f"{name}: {done}/{total}\n"
-                f"{progress_bar(done, total)}\n\n"
+                f"{progress_bar(done,total)}\n\n"
                 f"Kalan: {remaining}, Hatalar: {errors}\n"
                 f"Süre: {eta_str}\n"
                 f"{sys_info}"
@@ -256,31 +259,34 @@ async def process_collection_parallel(collection, name, message):
             except:
                 pass
             last_update = time.time()
+
     pool.shutdown(wait=False)
-    elapsed_time = round(time.time() - start_time, 2)
+    elapsed_time = round(time.time() - start_time,2)
     return total, done, errors, elapsed_time
 
 @Client.on_message(filters.command("cevir") & filters.private & CustomFilters.owner)
 async def turkce_icerik(client: Client, message: Message):
-    start_msg = await message.reply_text("🇹🇷 Türkçe çeviri hazırlanıyor.\nİlerleme tek mesajda gösterilecektir.",
-                                         parse_mode=enums.ParseMode.MARKDOWN)
-    movie_total, movie_done, movie_errors, movie_time = await process_collection_parallel(movie_col, "Filmler", start_msg)
-    series_total, series_done, series_errors, series_time = await process_collection_parallel(series_col, "Diziler", start_msg)
+    start_msg = await message.reply_text(
+        "🇹🇷 Türkçe çeviri hazırlanıyor.\nİlerleme tek mesajda gösterilecektir.",
+        parse_mode=enums.ParseMode.MARKDOWN
+    )
+    movie_total, movie_done, movie_errors, movie_time = await process_collection_parallel(movie_col,"Filmler",start_msg)
+    series_total, series_done, series_errors, series_time = await process_collection_parallel(series_col,"Diziler",start_msg)
 
     total_all = movie_total + series_total
     done_all = movie_done + series_done
     errors_all = movie_errors + series_errors
     remaining_all = total_all - done_all
-    total_time = round(movie_time + series_time, 2)
-    hours, rem = divmod(total_time, 3600)
-    minutes, seconds = divmod(rem, 60)
+    total_time = round(movie_time + series_time,2)
+    hours, rem = divmod(total_time,3600)
+    minutes, seconds = divmod(rem,60)
     eta_str = f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
 
     summary = (
         "🎉 Türkçe Çeviri Sonuçları\n\n"
-        f"📌 Filmler: {movie_done}/{movie_total}\n{progress_bar(movie_done, movie_total)}\nKalan: {movie_total - movie_done}, Hatalar: {movie_errors}\n\n"
-        f"📌 Diziler: {series_done}/{series_total}\n{progress_bar(series_done, series_total)}\nKalan: {series_total - series_done}, Hatalar: {series_errors}\n\n"
-        f"📊 Genel Özet\nToplam içerik : {total_all}\nBaşarılı     : {done_all - errors_all}\nHatalı       : {errors_all}\nKalan        : {remaining_all}\nToplam süre  : {eta_str}\n"
+        f"📌 Filmler: {movie_done}/{movie_total}\n{progress_bar(movie_done,movie_total)}\nKalan: {movie_total-movie_done}, Hatalar: {movie_errors}\n\n"
+        f"📌 Diziler: {series_done}/{series_total}\n{progress_bar(series_done,series_total)}\nKalan: {series_total-series_done}, Hatalar: {series_errors}\n\n"
+        f"📊 Genel Özet\nToplam içerik : {total_all}\nBaşarılı     : {done_all-errors_all}\nHatalı       : {errors_all}\nKalan        : {remaining_all}\nToplam süre  : {eta_str}\n"
     )
     try:
         await start_msg.edit_text(summary, parse_mode=enums.ParseMode.MARKDOWN)
@@ -292,21 +298,21 @@ def get_db_stats_and_genres(url):
     client = MongoClient(url)
     db_name_list = client.list_database_names()
     if not db_name_list:
-        return 0, 0, 0.0, 0.0, {}
+        return 0,0,0.0,0.0,{}
     db_local = client[db_name_list[0]]
     total_movies = db_local["movie"].count_documents({})
     total_series = db_local["tv"].count_documents({})
     stats = db_local.command("dbstats")
-    storage_mb = round(stats.get("storageSize", 0) / (1024*1024), 2)
+    storage_mb = round(stats.get("storageSize",0)/(1024*1024),2)
     max_storage_mb = 512
-    storage_percent = round((storage_mb / max_storage_mb) * 100, 1)
-    genre_stats = defaultdict(lambda: {"film":0, "dizi":0})
+    storage_percent = round((storage_mb/max_storage_mb)*100,1)
+    genre_stats = defaultdict(lambda: {"film":0,"dizi":0})
     for doc in db_local["movie"].aggregate([{"$unwind":"$genres"},{"$group":{"_id":"$genres","count":{"$sum":1}}}]):
-        genre_stats[doc["_id"]]["film"] = doc["count"]
+        genre_stats[doc["_id"]]["film"]=doc["count"]
     for doc in db_local["tv"].aggregate([{"$unwind":"$genres"},{"$group":{"_id":"$genres","count":{"$sum":1}}}]):
-        genre_stats[doc["_id"]]["dizi"] = doc["count"]
+        genre_stats[doc["_id"]]["dizi"]=doc["count"]
     client.close()
-    return total_movies, total_series, storage_mb, storage_percent, genre_stats
+    return total_movies,total_series,storage_mb,storage_percent,genre_stats
 
 def get_system_status():
     cpu = round(psutil.cpu_percent(interval=None),1)
@@ -314,7 +320,7 @@ def get_system_status():
     disk = psutil.disk_usage(DOWNLOAD_DIR)
     free_disk = round(disk.free/(1024**3),2)
     free_percent = round((disk.free/disk.total)*100,1)
-    uptime_sec = int(time.time() - bot_start_time)
+    uptime_sec = int(time.time()-bot_start_time)
     h, rem = divmod(uptime_sec,3600)
     m, s = divmod(rem,60)
     uptime = f"{h}h {m}m {s}s"
@@ -323,15 +329,15 @@ def get_system_status():
 @Client.on_message(filters.command("istatistik") & filters.private & CustomFilters.owner)
 async def send_statistics(client: Client, message: Message):
     try:
-        if len(db_urls) < 2:
+        if len(db_urls)<2:
             await message.reply_text("⚠️ İkinci veritabanı bulunamadı.")
             return
-        total_movies, total_series, storage_mb, storage_percent, genre_stats = get_db_stats_and_genres(db_urls[1])
-        cpu, ram, free_disk, free_percent, uptime = get_system_status()
-        genre_lines = []
-        for genre, counts in sorted(genre_stats.items(), key=lambda x:x[0]):
+        total_movies,total_series,storage_mb,storage_percent,genre_stats = get_db_stats_and_genres(db_urls[1])
+        cpu,ram,free_disk,free_percent,uptime = get_system_status()
+        genre_lines=[]
+        for genre,counts in sorted(genre_stats.items(),key=lambda x:x[0]):
             genre_lines.append(f"{genre:<12} | Film: {counts['film']:<3} | Dizi: {counts['dizi']:<3}")
-        genre_text = "\n".join(genre_lines)
+        genre_text="\n".join(genre_lines)
         text = (
             f"⌬ <b>İstatistik</b>\n\n"
             f"┠ Filmler: {total_movies}\n"
@@ -342,7 +348,7 @@ async def send_statistics(client: Client, message: Message):
             f"┟ CPU → {cpu}% | Boş → {free_disk}GB [{free_percent}%]\n"
             f"┖ RAM → {ram}% | Süre → {uptime}"
         )
-        await message.reply_text(text, parse_mode=enums.ParseMode.HTML, quote=True)
+        await message.reply_text(text,parse_mode=enums.ParseMode.HTML,quote=True)
     except Exception as e:
         await message.reply_text(f"⚠️ Hata: {e}")
         print("istatistik hata:", e)
