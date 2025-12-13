@@ -72,53 +72,55 @@ async def handle_stop(callback_query: CallbackQuery):
 
 # ---------------- TRANSLATE WORKER (güncellenmiş) ----------------
 def translate_batch_worker(batch_data):
-    batch_docs = batch_data["docs"]
-    stop_flag_set = batch_data["stop_flag_set"]
+    """
+    Verilen batch belgelerini çevirir ve sonuçları döndürür.
+    stop_event ile thread güvenli bir durdurma mekanizması sağlar.
+    """
 
+    batch_docs = batch_data["docs"]
+    stop_event = batch_data.get("stop_event")  # asyncio.Event yerine threading.Event gibi kullanılabilir
     CACHE = {}
     results = []
     errors = []
     translated_episode_count = 0
 
     for doc in batch_docs:
-        if stop_flag_set:
-            break
+        if stop_event and stop_event.is_set():
+            break  # Stop talimatı geldiğinde batch'i durdur
 
         _id = doc.get("_id")
         upd = {}
         cevrildi = doc.get("cevrildi", False)
         title_main = doc.get("title") or doc.get("name") or "İsim yok"
-        
-        is_series = bool(doc.get("seasons")) # Dizi mi? Kontrolü
 
-        # Eğer Film ise (is_series == False) VE çevrilmişse ATLA.
-        # Eğer Dizi ise (is_series == True), ATAMA! Çünkü bölümlerde çevrilmemiş olabilir.
+        is_series = bool(doc.get("seasons"))  # Dizi mi?
+
+        # Eğer Film ise ve çevrilmişse atla
         if cevrildi and not is_series:
             continue
 
         try:
-            # 1. description çevirisi:
-            # Sadece, belge çevrilmemişse (Film) VEYA Dizi ise (description'ın çevrilmesi gerekir)
+            # 1. description çevirisi
             if doc.get("description"):
                 upd["description"] = translate_text_safe(doc["description"], CACHE)
             else:
                 errors.append(f"ID: {_id} | Film/Dizi: {title_main} | Neden: 'description' alanı boş")
 
-            # 2. Bölüm Çevirisi (Sadece Diziler için)
+            # 2. Bölüm çevirisi (Sadece diziler için)
             seasons = doc.get("seasons")
             if seasons:
-                # Dizi mantığı: Bölüm çevirisi sadece cevrildi: false olanları hedef alır
-                # ... (mevcut bölüm çeviri döngünüz buraya gelir)
-                
-                # ÖNEMLİ: Eğer en az bir bölüm çevrildiyse veya description çevrildiyse
-                # Sadece Film belgelerine cevrildi: True bayrağını ekleyebiliriz.
-                # Dizilere artık üst seviye bayrak eklemiyoruz.
-                
-                upd["seasons"] = seasons # Bölümleri güncellediğimiz için seasons'ı geri yazmalıyız
-            
-            # 3. Sonuç Bayrağı: Dizi ise 'cevrildi' bayrağını eklemeyin
+                for season_idx, season in enumerate(seasons):
+                    for ep_idx, ep in enumerate(season.get("episodes", [])):
+                        if not ep.get("cevrildi", False) and ep.get("description"):
+                            ep["description"] = translate_text_safe(ep["description"], CACHE)
+                            ep["cevrildi"] = True
+                            translated_episode_count += 1
+                # Güncellenmiş seasons'ı döndür
+                upd["seasons"] = seasons
+
+            # 3. Film ise üst seviye 'cevrildi' bayrağı ekle
             if not is_series:
-                 upd["cevrildi"] = True
+                upd["cevrildi"] = True
 
             results.append((_id, upd))
 
@@ -126,6 +128,7 @@ def translate_batch_worker(batch_data):
             errors.append(f"ID: {_id} | Film/Dizi: {title_main} | Hata: {str(e)}")
 
     return results, errors, translated_episode_count
+
 
 # ---------------- /cevir ----------------
 @Client.on_message(filters.command("cevir") & filters.private & filters.user(OWNER_ID))
