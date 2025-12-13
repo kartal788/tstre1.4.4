@@ -87,6 +87,7 @@ def translate_batch_worker(batch_data):
         _id = doc.get("_id")
         upd = {}
         cevrildi = doc.get("cevrildi", False)
+        title_main = doc.get("title") or doc.get("name") or "İsim yok"
 
         if cevrildi:
             continue
@@ -96,35 +97,41 @@ def translate_batch_worker(batch_data):
             if doc.get("description"):
                 upd["description"] = translate_text_safe(doc["description"], CACHE)
             else:
-                errors.append(f"ID: {_id} | Neden: 'description' alanı boş")
+                errors.append(f"ID: {_id} | Film/Dizi: {title_main} | Neden: 'description' alanı boş")
 
             # seasons / episodes çevirisi
             seasons = doc.get("seasons")
             if seasons:
                 for s in seasons:
+                    season_num = s.get("season_number", "?")
                     for ep in s.get("episodes", []):
                         if ep.get("cevrildi", False):
                             continue
+                        ep_title = ep.get("title") or "İsim yok"
+
                         if ep.get("title"):
                             ep["title"] = translate_text_safe(ep["title"], CACHE)
                         else:
-                            errors.append(f"ID: {_id} | Sezon: {s.get('season_number')} | "
-                                          f"Bölüm: {ep.get('episode_number')} | Neden: 'title' alanı boş")
+                            errors.append(
+                                f"ID: {_id} | Dizi: {title_main} | Sezon: {season_num} | Bölüm: ? | Bölüm İsmi: {ep_title} | Neden: 'title' alanı boş"
+                            )
+
                         if ep.get("overview"):
                             ep["overview"] = translate_text_safe(ep["overview"], CACHE)
                         else:
-                            errors.append(f"ID: {_id} | Sezon: {s.get('season_number')} | "
-                                          f"Bölüm: {ep.get('episode_number')} | Neden: 'overview' alanı boş")
+                            errors.append(
+                                f"ID: {_id} | Dizi: {title_main} | Sezon: {season_num} | Bölüm: {ep.get('episode_number', '?')} | Bölüm İsmi: {ep_title} | Neden: 'overview' alanı boş"
+                            )
+
                         ep["cevrildi"] = True
                 upd["seasons"] = seasons
 
             upd["cevrildi"] = True
             results.append((_id, upd))
         except Exception as e:
-            errors.append(f"ID: {_id} | Hata: {str(e)}")
+            errors.append(f"ID: {_id} | Film/Dizi: {title_main} | Hata: {str(e)}")
 
     return results, errors
-
 
 # ---------------- /cevir ----------------
 @Client.on_message(filters.command("cevir") & filters.private & filters.user(OWNER_ID))
