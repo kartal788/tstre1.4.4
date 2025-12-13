@@ -166,10 +166,25 @@ async def cevir(client: Client, message: Message):
                 if time.time() - last_update > update_interval or idx >= len(ids) or stop_event.is_set():
                     text = ""
                     for col_summary in collections:
-                        rem = col_summary["total"] - col_summary["done"]
-                        text += f"📌 **{col_summary['name']}**: {col_summary['done']}/{col_summary['total']}\n"
-                        text += f"{progress_bar(col_summary['done'], col_summary['total'])}\n"
-                        text += f"Hatalar: `{col_summary['errors']}` | Kalan: {rem}\n\n"
+                        if col_summary["name"] == "Diziler":
+                            # Diziler için toplam bölüm sayısı ve tamamlanan bölüm sayısı
+                            total_episodes = 0
+                            done_episodes = 0
+                            for doc in col_summary["col"].find({}, {"seasons.episodes.cevrildi":1}):
+                                for season in doc.get("seasons", []):
+                                    total_episodes += len(season.get("episodes", []))
+                                    done_episodes += sum(1 for ep in season.get("episodes", []) if ep.get("cevrildi", False))
+                            rem = total_episodes - done_episodes
+                            text += f"📌 **{col_summary['name']}**: {done_episodes}/{total_episodes}\n"
+                            text += f"{progress_bar(done_episodes, total_episodes)}\n"
+                            text += f"Hatalar: `{col_summary['errors']}` | Kalan: {rem}\n\n"
+                        else:
+                            # Filmler olduğu gibi
+                            rem = col_summary["total"] - col_summary["done"]
+                            text += f"📌 **{col_summary['name']}**: {col_summary['done']}/{col_summary['total']}\n"
+                            text += f"{progress_bar(col_summary['done'], col_summary['total'])}\n"
+                            text += f"Hatalar: `{col_summary['errors']}` | Kalan: {rem}\n\n"
+
                     elapsed = time.time() - start_time
                     total_done = sum(x["done"] for x in collections)
                     total_all = sum(x["total"] for x in collections)
@@ -189,21 +204,34 @@ async def cevir(client: Client, message: Message):
     finally:
         pool.shutdown(wait=False)
 
-    # ------------ SONUÇ EKRANI ------------
+    # ------------ SONUÇ EKRANI (Bölüm bazlı) ------------
+    final_text = "🎉 **Türkçe Çeviri Sonuçları**\n\n"
+    for col_summary in collections:
+        if col_summary["name"] == "Diziler":
+            total_episodes = 0
+            done_episodes = 0
+            for doc in col_summary["col"].find({}, {"seasons.episodes.cevrildi":1}):
+                for season in doc.get("seasons", []):
+                    total_episodes += len(season.get("episodes", []))
+                    done_episodes += sum(1 for ep in season.get("episodes", []) if ep.get("cevrildi", False))
+            final_text += (
+                f"📌 **{col_summary['name']}**: {done_episodes}/{total_episodes}\n"
+                f"{progress_bar(done_episodes, total_episodes)}\n"
+                f"Hatalar: `{col_summary['errors']}`\n\n"
+            )
+        else:
+            final_text += (
+                f"📌 **{col_summary['name']}**: {col_summary['done']}/{col_summary['total']}\n"
+                f"{progress_bar(col_summary['done'], col_summary['total'])}\n"
+                f"Hatalar: `{col_summary['errors']}`\n\n"
+            )
+
     total_all = sum(c["total"] for c in collections)
     done_all = sum(c["done"] for c in collections)
     errors_all = sum(c["errors"] for c in collections)
     remaining_all = total_all - done_all
     total_time = round(time.time() - start_time)
     final_time_str = format_time_custom(total_time)
-
-    final_text = "🎉 **Türkçe Çeviri Sonuçları**\n\n"
-    for col_summary in collections:
-        final_text += (
-            f"📌 **{col_summary['name']}**: {col_summary['done']}/{col_summary['total']}\n"
-            f"{progress_bar(col_summary['done'], col_summary['total'])}\n"
-            f"Hatalar: `{col_summary['errors']}`\n\n"
-        )
 
     final_text += (
         f"📊 **Genel Özet**\n"
@@ -218,7 +246,6 @@ async def cevir(client: Client, message: Message):
         await start_msg.edit_text(final_text, parse_mode=enums.ParseMode.MARKDOWN)
     except:
         pass
-
 
 # ---------------- /CEVIREKLE ----------------
 @Client.on_message(filters.command("cevirekle") & filters.private & filters.user(OWNER_ID))
