@@ -74,61 +74,53 @@ async def handle_stop(callback_query: CallbackQuery):
 def translate_batch_worker(batch_data):
     """
     Verilen batch belgelerini çevirir ve sonuçları döndürür.
-    stop_event ile thread güvenli bir durdurma mekanizması sağlar.
+    Diziler için tüm bölümleri kontrol eder ve günceller.
     """
-
     batch_docs = batch_data["docs"]
-    stop_event = batch_data.get("stop_event")  # asyncio.Event yerine threading.Event gibi kullanılabilir
     CACHE = {}
     results = []
     errors = []
     translated_episode_count = 0
 
     for doc in batch_docs:
-        if stop_event and stop_event.is_set():
-            break  # Stop talimatı geldiğinde batch'i durdur
-
         _id = doc.get("_id")
         upd = {}
-        cevrildi = doc.get("cevrildi", False)
         title_main = doc.get("title") or doc.get("name") or "İsim yok"
-
-        is_series = bool(doc.get("seasons"))  # Dizi mi?
-
-        # Eğer Film ise ve çevrilmişse atla
-        if cevrildi and not is_series:
-            continue
+        is_series = bool(doc.get("seasons"))
 
         try:
             # 1. description çevirisi
             if doc.get("description"):
                 upd["description"] = translate_text_safe(doc["description"], CACHE)
             else:
-                errors.append(f"ID: {_id} | Film/Dizi: {title_main} | Neden: 'description' alanı boş")
+                if not is_series:
+                    errors.append(f"ID: {_id} | Film: {title_main} | Neden: 'description' alanı boş")
 
-            # 2. Bölüm çevirisi (Sadece diziler için)
-            seasons = doc.get("seasons")
-            if seasons:
-                for season_idx, season in enumerate(seasons):
-                    for ep_idx, ep in enumerate(season.get("episodes", [])):
+            # 2. Dizi bölümleri çevirisi
+            if is_series:
+                seasons = doc.get("seasons", [])
+                updated = False
+                for season in seasons:
+                    for ep in season.get("episodes", []):
                         if not ep.get("cevrildi", False) and ep.get("description"):
                             ep["description"] = translate_text_safe(ep["description"], CACHE)
                             ep["cevrildi"] = True
                             translated_episode_count += 1
-                # Güncellenmiş seasons'ı döndür
-                upd["seasons"] = seasons
+                            updated = True
+                if updated:
+                    upd["seasons"] = seasons
 
-            # 3. Film ise üst seviye 'cevrildi' bayrağı ekle
+            # 3. Film için üst seviye cevrildi bayrağı
             if not is_series:
                 upd["cevrildi"] = True
 
-            results.append((_id, upd))
+            if upd:
+                results.append((_id, upd))
 
         except Exception as e:
-            errors.append(f"ID: {_id} | Film/Dizi: {title_main} | Hata: {str(e)}")
+            errors.append(f"ID: {_id} | {'Dizi' if is_series else 'Film'}: {title_main} | Hata: {str(e)}")
 
     return results, errors, translated_episode_count
-
 
 # ---------------- /cevir ----------------
 @Client.on_message(filters.command("cevir") & filters.private & filters.user(OWNER_ID))
