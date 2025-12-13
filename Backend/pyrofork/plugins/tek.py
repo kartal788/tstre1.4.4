@@ -133,11 +133,10 @@ async def cevir(client: Client, message: Message):
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]]),
     )
 
-    start_time = time.time()  # Başlangıç zamanı
+    start_time = time.time()
 
-    # ----------------- Toplam çevrilecek içerik (sadece cevrildi != True) -----------------
+    # ----------------- Toplam çevrilecek içerik -----------------
     movies_to_translate = movie_col.count_documents({"cevrildi": {"$ne": True}})
-
     episodes_to_translate = 0
     for doc in series_col.find({}, {"seasons.episodes.cevrildi": 1}):
         for season in doc.get("seasons", []):
@@ -146,9 +145,7 @@ async def cevir(client: Client, message: Message):
                     episodes_to_translate += 1
 
     total_to_translate = movies_to_translate + episodes_to_translate
-    total_done_so_far = 0  # Çevirilen içerik sayısı (gerçekten bu run’da)
 
-    # ----------------- Çeviri koleksiyonları -----------------
     collections = [
         {"col": movie_col, "name": "Filmler", "errors_list": []},
         {"col": series_col, "name": "Bölümler", "errors_list": []},
@@ -159,7 +156,7 @@ async def cevir(client: Client, message: Message):
     pool = ThreadPoolExecutor(max_workers=workers)
     loop = asyncio.get_event_loop()
     last_update = time.time()
-    update_interval = 10  # saniye
+    update_interval = 10
 
     try:
         for c in collections:
@@ -178,39 +175,41 @@ async def cevir(client: Client, message: Message):
                 results, errors = await loop.run_in_executor(pool, translate_batch_worker, worker_data)
                 c["errors_list"].extend(errors)
 
-                # ----------------- Veritabanına yaz ve çevrilen sayısını hesapla -----------------
-                movies_done_in_batch = 0
-                episodes_done_in_batch = 0
-
+                # ----------------- Veritabanına yaz -----------------
                 for _id, upd in results:
-                    try:
-                        if upd:
+                    if upd:
+                        try:
                             col.update_one({"_id": _id}, {"$set": upd})
-                            # Film mi kontrolü
-                            if col == movie_col:
-                                movies_done_in_batch += 1
-                            else:  # Dizi
-                                for s in upd.get("seasons", []):
-                                    for ep in s.get("episodes", []):
-                                        if ep.get("cevrildi", False):
-                                            episodes_done_in_batch += 1
-                    except:
-                        c["errors_list"].append(f"ID: {_id} | DB Güncelleme Hatası")
-
-                total_done_so_far += movies_done_in_batch + episodes_done_in_batch
+                        except:
+                            c["errors_list"].append(f"ID: {_id} | DB Güncelleme Hatası")
 
                 idx += len(batch_ids)
 
                 # ----------------- Sistem durumu ve ilerleme mesajı -----------------
-                cpu = round(psutil.cpu_percent(interval=0.1), 1)
+                cpu = round(psutil.cpu_percent(interval=None), 1)
                 ram_percent = round(psutil.virtual_memory().percent, 1)
                 elapsed_time = time.time() - start_time
                 elapsed_h, rem = divmod(int(elapsed_time), 3600)
                 elapsed_m, elapsed_s = divmod(rem, 60)
                 elapsed_time_str = f"{elapsed_h}h{elapsed_m}m{elapsed_s}s"
 
-                if total_done_so_far > 0:
-                    eta_sec = (total_to_translate - total_done_so_far) * (elapsed_time / total_done_so_far)
+                # Kalan ve hatalı sayıları hesapla
+                total_errors = sum(len(c["errors_list"]) for c in collections)
+                total_remaining_movies = movie_col.count_documents({"cevrildi": {"$ne": True}})
+                total_remaining_episodes = 0
+                for doc in series_col.find({}, {"seasons.episodes.cevrildi": 1}):
+                    for season in doc.get("seasons", []):
+                        for ep in season.get("episodes", []):
+                            if not ep.get("cevrildi", False):
+                                total_remaining_episodes += 1
+                total_remaining = total_remaining_movies + total_remaining_episodes
+
+                # Çevrilen = Toplam - (Kalan + Hatalı)
+                total_translated = total_to_translate - (total_remaining + total_errors)
+
+                # ETA hesapla
+                if total_translated > 0:
+                    eta_sec = (total_to_translate - total_translated) * (elapsed_time / total_translated)
                 else:
                     eta_sec = 0
                 eta_h, rem = divmod(int(eta_sec), 3600)
@@ -219,16 +218,13 @@ async def cevir(client: Client, message: Message):
 
                 if time.time() - last_update >= update_interval or idx >= len(ids):
                     last_update = time.time()
-                    total_remaining = max(total_to_translate - total_done_so_far, 0)
-                    total_errors = sum(len(c["errors_list"]) for c in collections)
-
                     progress_text = (
                         f"🇹🇷 Türkçe çeviri hazırlanıyor...\n\n"
                         f"Toplam çevrilecek içerik: {total_to_translate}\n"
-                        f"Çevrilen: {total_done_so_far}\n"
+                        f"Çevrilen: {total_translated}\n"
                         f"Kalan: {total_remaining}\n"
                         f"Hatalı: {total_errors}\n"
-                        f"{progress_bar(total_done_so_far, total_to_translate)}\n\n"
+                        f"{progress_bar(total_translated, total_to_translate)}\n\n"
                         f"Süre: `{elapsed_time_str}` (`{eta_str}`)\n"
                         f"CPU: `{cpu}%` | RAM: `{ram_percent}%`"
                     )
@@ -247,8 +243,16 @@ async def cevir(client: Client, message: Message):
     async def send_final_summary():
         end_time = time.time()
         total_duration = end_time - start_time
-        total_remaining = max(total_to_translate - total_done_so_far, 0)
+        total_remaining_movies = movie_col.count_documents({"cevrildi": {"$ne": True}})
+        total_remaining_episodes = 0
+        for doc in series_col.find({}, {"seasons.episodes.cevrildi": 1}):
+            for season in doc.get("seasons", []):
+                for ep in season.get("episodes", []):
+                    if not ep.get("cevrildi", False):
+                        total_remaining_episodes += 1
+        total_remaining = total_remaining_movies + total_remaining_episodes
         total_errors = sum(len(c["errors_list"]) for c in collections)
+        total_translated = total_to_translate - (total_remaining + total_errors)
 
         h, rem = divmod(int(total_duration), 3600)
         m, s = divmod(rem, 60)
@@ -257,7 +261,7 @@ async def cevir(client: Client, message: Message):
         final_text = (
             "📊 **Genel Özet**\n\n"
             f"Toplam çevrilecek içerik: {total_to_translate}\n"
-            f"Çevrilen: {total_done_so_far}\n"
+            f"Çevrilen: {total_translated}\n"
             f"Kalan: {total_remaining}\n"
             f"Hatalı: {total_errors}\n"
             f"Süre: {duration_str}"
