@@ -1,7 +1,6 @@
 import asyncio
 import time
 import os
-import math
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 
@@ -13,10 +12,22 @@ import pymongo
 from deep_translator import GoogleTranslator
 import psutil
 
-# NOT: 'Backend.helper.custom_filter' modülüne erişimim olmadığı için,
-# 'CustomFilters.owner' yerine basitleştirilmiş bir owner ID kontrolü kullanılmıştır.
-# Lütfen OWNER_ID'yi doğru şekilde ayarlayın veya kendi botunuzdaki filtre yapısını kullanın.
-OWNER_ID = int(os.getenv("OWNER_ID", 12345)) 
+# ------------ ÖZEL FİLTRE İÇE AKTARIMI ------------
+# Botunuzun özel filtre yapısını kullanır.
+try:
+    from Backend.helper.custom_filter import CustomFilters 
+except ImportError:
+    print("UYARI: CustomFilters içe aktarılamadı. Basit OWNER_ID filtresi kullanılıyor.")
+    OWNER_ID = int(os.getenv("OWNER_ID", 12345))
+    class CustomFilters:
+        @staticmethod
+        async def owner_filter(client, message):
+            user = message.from_user or message.sender_chat
+            uid = user.id
+            return uid == OWNER_ID
+        owner = filters.create(owner_filter)
+# -------------------------------------------------
+
 
 # Sabit Çeviri Durumu Etiketi
 TRANSLATED_STATUS_FIELD = "translated_status"
@@ -25,31 +36,26 @@ TRANSLATED_STATUS_VALUE = "cevrildi"
 # GLOBAL STOP EVENT
 stop_event = asyncio.Event()
 
-# ------------ DATABASE Bağlantısı (Düzeltilmiş Hata Giderme) ------------
+# ------------ DATABASE Bağlantısı (InvalidURI Hata Giderme) ------------
 db_raw = os.getenv("DATABASE", "")
 if not db_raw:
     raise Exception("DATABASE ortam değişkeni bulunamadı!")
 
-# Virgülle ayrılmış tüm URL'leri al ve her birinin başındaki/sonundaki boşlukları sil
 db_urls = [u.strip() for u in db_raw.split(",") if u.strip()]
 
-# Bağlantı dizeleri listesinin uzunluğunu kontrol edin
 if len(db_urls) < 2:
     if not db_urls:
          raise Exception("DATABASE ortam değişkeninde geçerli URI bulunamadı!")
     MONGO_URL = db_urls[0] 
 else:
-    # İkinci URI'yi kullan (Storage DB varsayımı)
     MONGO_URL = db_urls[1] 
 
 try:
-    # URI'yi MongoClient'a göndermeden önce son bir boşluk temizliği (InvalidURI hatasını önler)
     client_db = MongoClient(MONGO_URL.strip()) 
     db_name = client_db.list_database_names()[0]
     db = client_db[db_name]
     movie_col = db["movie"]
     series_col = db["tv"]
-    print(f"[INFO] Active Storage DB: {MONGO_URL.strip()}")
 except Exception as e:
     raise Exception(f"MongoDB bağlantı hatası ({MONGO_URL.strip()} için): {e}")
 
@@ -80,11 +86,12 @@ def translate_text_safe(text, cache):
     try:
         tr = GoogleTranslator(source='en', target='tr').translate(text)
     except Exception:
+        # Çeviri API hatası durumunda orijinal metni döndür
         tr = text
     cache[text] = tr
     return tr
 
-# ------------ Progress Bar ------------
+# ------------ Progress Bar ve Zaman Formatlama Yardımcı Fonksiyonları ------------
 def progress_bar(current, total, bar_length=12):
     if total == 0:
         return "[⬡" + "⬡"*(bar_length-1) + "] 0.00%"
@@ -94,9 +101,7 @@ def progress_bar(current, total, bar_length=12):
     percent_display = min(percent, 100.00)
     return f"[{bar}] {percent_display:.2f}%"
 
-# ------------ Zaman Formatlama Yardımcı Fonksiyonu ------------
 def format_time_custom(total_seconds):
-    """Saniyeyi Saat(s) Dakika(d) Saniye(s) formatına çevirir (Örn: 0s0d05s)"""
     if total_seconds is None or total_seconds < 0:
         return "0s0d00s"
 
@@ -106,11 +111,11 @@ def format_time_custom(total_seconds):
     
     return f"{int(hours)}s{int(minutes)}d{int(seconds):02}s"
 
-# ------------ Worker: batch çevirici (Çevrilmemiş Bölüm Kontrolü) ------------
+# ------------ Worker: batch çevirici (Güçlendirilmiş Hata Yönetimi) ------------
 def translate_batch_worker(batch_data):
     """
-    Çoklu süreçte (multiprocessing) çalıştırılacak işçi fonksiyonu.
-    SADECE çevrilmemiş içeriği (veya dizilerde çevrilmemiş bölümleri) çevirir.
+    Çoklu süreçte çalıştırılacak işçi fonksiyonu.
+    Her döküman için ayrı hata yakalama bloğu eklenmiştir.
     """
     batch_docs = batch_data["docs"]
     stop_flag_set = batch_data["stop_flag_set"]
@@ -120,6 +125,7 @@ def translate_batch_worker(batch_data):
 
     CACHE = {}
     results = []
+    error_ids = []
 
     for doc in batch_docs:
         if stop_flag_set:
@@ -128,61 +134,64 @@ def translate_batch_worker(batch_data):
         _id = doc.get("_id")
         upd = {}
         needs_update = False
-
-        # 1. Film Çevirisi VEYA Dizi Ana Açıklaması
-        # Sadece çevrilmemişse genel açıklama çevrilsin
-        if doc.get(TRANSLATED_STATUS_FIELD) != TRANSLATED_STATUS_VALUE:
-            desc = doc.get("description")
-            if desc:
-                upd["description"] = translate_text_safe(desc, CACHE)
-                needs_update = True
         
-        # 2. Sezon/Bölüm Çevirisi (Diziler için - SADECE ÇEVRİLMEMİŞ BÖLÜMLER)
-        seasons = doc.get("seasons")
-        is_tv_show = doc.get("media_type") == "tv"
-        
-        if seasons and is_tv_show and isinstance(seasons, list):
-            modified = False
-            for season in seasons:
-                eps = season.get("episodes", []) or []
-                for ep in eps:
-                    if stop_flag_set:
-                        break
-                    
-                    # SADECE translated_status alanı olmayan bölümleri çevir (Yeni bölüm mantığı)
-                    if ep.get(TRANSLATED_STATUS_FIELD) != TRANSLATED_STATUS_VALUE:
+        # Döküman bazında hata yönetimi
+        try:
+            # 1. Film Çevirisi VEYA Dizi Ana Açıklaması
+            if doc.get(TRANSLATED_STATUS_FIELD) != TRANSLATED_STATUS_VALUE:
+                desc = doc.get("description")
+                if desc:
+                    upd["description"] = translate_text_safe(desc, CACHE)
+                    needs_update = True
+            
+            # 2. Sezon/Bölüm Çevirisi (Diziler için)
+            seasons = doc.get("seasons")
+            is_tv_show = doc.get("media_type") == "tv"
+            
+            if seasons and is_tv_show and isinstance(seasons, list):
+                modified = False
+                for season in seasons:
+                    eps = season.get("episodes", []) or []
+                    for ep in eps:
+                        if stop_flag_set:
+                            break
                         
-                        # Başlık ve Özet çevirisi
-                        if "title" in ep and ep["title"]:
-                            ep["title"] = translate_text_safe(ep["title"], CACHE)
-                            modified = True
-                        if "overview" in ep and ep["overview"]:
-                            ep["overview"] = translate_text_safe(ep["overview"], CACHE)
-                            modified = True
+                        if ep.get(TRANSLATED_STATUS_FIELD) != TRANSLATED_STATUS_VALUE:
                             
-                        # Bölüm çevrildiyse etiketi ekle
-                        if modified:
-                            ep[TRANSLATED_STATUS_FIELD] = TRANSLATED_STATUS_VALUE
-                            
-            if modified:
-                upd["seasons"] = seasons
-                needs_update = True
+                            # Başlık ve Özet çevirisi
+                            if "title" in ep and ep["title"]:
+                                ep["title"] = translate_text_safe(ep["title"], CACHE)
+                                modified = True
+                            if "overview" in ep and ep["overview"]:
+                                ep["overview"] = translate_text_safe(ep["overview"], CACHE)
+                                modified = True
+                                
+                            if modified:
+                                ep[TRANSLATED_STATUS_FIELD] = TRANSLATED_STATUS_VALUE
+                                
+                if modified:
+                    upd["seasons"] = seasons
+                    needs_update = True
 
-        # Belgenin kendisi de çevrilmediyse ve çevrildiyse ana etiketi ekle
-        if doc.get(TRANSLATED_STATUS_FIELD) != TRANSLATED_STATUS_VALUE and needs_update:
-            upd[TRANSLATED_STATUS_FIELD] = TRANSLATED_STATUS_VALUE
+            if doc.get(TRANSLATED_STATUS_FIELD) != TRANSLATED_STATUS_VALUE and needs_update:
+                upd[TRANSLATED_STATUS_FIELD] = TRANSLATED_STATUS_VALUE
 
+            if needs_update:
+                results.append((_id, upd))
+            
+        except Exception as e:
+            # Herhangi bir döküman işleme hatasında (verinin bozuk olması, çeviri hatası vb.)
+            # o dökümanı atla ve hatasını kaydet.
+            print(f"[{doc.get('media_type')}] {_id} dökümanında işleme hatası: {e}")
+            error_ids.append(_id)
+            continue
 
-        if needs_update:
-            results.append((_id, upd))
-
-    return results
+    return {"results": results, "error_ids": error_ids}
 
 # ------------ Yardımcı Fonksiyon: Çevrilecek Sayıyı Hesapla ------------
 async def get_translation_count():
     movie_count = movie_col.count_documents({TRANSLATED_STATUS_FIELD: {"$ne": TRANSLATED_STATUS_VALUE}})
     
-    # Diziler için, en az bir çevrilmemiş bölümü olan ana belgeleri bul
     series_count = series_col.aggregate([
         {"$unwind": "$seasons"},
         {"$unwind": "$seasons.episodes"},
@@ -199,12 +208,11 @@ async def get_translation_count():
 async def bulk_status_update(collection, action):
     """Koleksiyon tipine göre (movie/tv) farklı güncelleme komutları kullanır."""
     
-    # Filmler koleksiyonu için (seasons alanı olmadığı için ayrı işlem)
     if collection.name == "movie":
         if action == "ekle":
             update_op = {"$set": {TRANSLATED_STATUS_FIELD: TRANSLATED_STATUS_VALUE}}
             msg_action = "etiketlendi"
-        else: # kaldir
+        else:
             update_op = {"$unset": {TRANSLATED_STATUS_FIELD: ""}}
             msg_action = "etiketi kaldırıldı"
         
@@ -212,24 +220,20 @@ async def bulk_status_update(collection, action):
         
         return f"✅ **{collection.name}** koleksiyonundaki {update_result.modified_count} içerik çevrilmiş olarak {msg_action}."
 
-    # Diziler koleksiyonu için (seasons alanı var)
     elif collection.name == "tv":
         if action == "ekle":
-            # Hem ana belgeye hem de tüm bölümlere etiket ekle
             update_op = {"$set": {
                 TRANSLATED_STATUS_FIELD: TRANSLATED_STATUS_VALUE, 
                 f"seasons.$[].episodes.$[].{TRANSLATED_STATUS_FIELD}": TRANSLATED_STATUS_VALUE
             }}
             msg_action = "etiketlendi"
-        else: # kaldir
-            # Hem ana belgeden hem de tüm bölümlerden etiket kaldır
+        else:
             update_op = {"$unset": {
                 TRANSLATED_STATUS_FIELD: "", 
                 f"seasons.$[].episodes.$[].{TRANSLATED_STATUS_FIELD}": ""
             }}
             msg_action = "etiketi kaldırıldı"
             
-        # MongoDB'nin $[] operatörü tüm array elemanlarına uygular
         update_result = collection.update_many({}, update_op)
         
         return f"✅ **{collection.name}** koleksiyonundaki {update_result.modified_count} içerik çevrilmiş olarak {msg_action} (Bölümler dahil)."
@@ -251,21 +255,18 @@ async def handle_stop(callback_query: CallbackQuery):
         pass
 
 # ------------ /cevir Komutu (Ana İşleyici) ------------
-@Client.on_message(filters.command("cevir") & filters.private & filters.user(OWNER_ID)) 
+@Client.on_message(filters.command("cevir") & filters.private & CustomFilters.owner) 
 async def turkce_icerik_main(client: Client, message: Message):
     command_parts = message.text.split()
     
     if len(command_parts) == 1:
-        # Sadece /cevir ise, çeviri işlemini başlat
         await start_translation(client, message)
         return
         
     sub_command = command_parts[1].lower()
     
-    # Durum Yönetimi Alt Komutları
     if sub_command == "ekle":
         await message.reply_text("⏳ Tüm içeriklere 'çevrildi' etiketi ekleniyor (Filmler ve Bölümler)...")
-        # movie_col için ayrı, series_col için ayrı çağrı (Hata giderme burada)
         movie_msg = await bulk_status_update(movie_col, "ekle")
         series_msg = await bulk_status_update(series_col, "ekle")
         await message.reply_text(f"{movie_msg}\n{series_msg}")
@@ -273,7 +274,6 @@ async def turkce_icerik_main(client: Client, message: Message):
         
     elif sub_command == "kaldir":
         await message.reply_text("⏳ Tüm içeriklerden 'çevrildi' etiketi kaldırılıyor (Filmler ve Bölümler)...")
-        # movie_col için ayrı, series_col için ayrı çağrı (Hata giderme burada)
         movie_msg = await bulk_status_update(movie_col, "kaldir")
         series_msg = await bulk_status_update(series_col, "kaldir")
         await message.reply_text(f"{movie_msg}\n{series_msg}")
@@ -284,7 +284,7 @@ async def turkce_icerik_main(client: Client, message: Message):
         m_count, t_count = await get_translation_count()
         
         await message.reply_text(
-            f"📊 **Çeviri Durumu Özeti (Etiket: `{TRANSLATED_STATUS_VALUE}`)**\n\n"
+            f"📊 **Çeviri Durumu Özeti (Etiket: `{TRANSLATED_STATUS_FIELD}`)**\n\n"
             f"🎬 **Filmler**: `{m_count}` adet (Ana açıklama çevrilmemiş)\n"
             f"📺 **Diziler**: `{t_count}` adet (En az bir bölümü çevrilmemiş)\n\n"
             f"Toplam çevrilecek içerik sayısı: `{m_count + t_count}`"
@@ -356,9 +356,11 @@ async def start_translation(client: Client, message: Message):
                 try:
                     loop = asyncio.get_event_loop()
                     future = loop.run_in_executor(pool, translate_batch_worker, worker_data)
-                    results = await future 
+                    worker_output = await future
+                    results = worker_output["results"]
+                    c["errors"] += len(worker_output["error_ids"])
                 except Exception as e:
-                    print(f"Worker Hatası ({name}): {e}")
+                    print(f"Worker Görev Başlatma/Tamamlama Hatası ({name}): {e}")
                     c["errors"] += len(batch_docs)
                     idx += len(batch_ids)
                     await asyncio.sleep(1)
@@ -374,21 +376,19 @@ async def start_translation(client: Client, message: Message):
                         update_requests.append(
                             pymongo.UpdateOne({"_id": _id}, {"$set": upd})
                         )
-                        c["done"] += 1 
-                    else:
-                        c["done"] += 1 
+                    c["done"] += 1 
 
                 if update_requests:
                     try:
                         col.bulk_write(update_requests, ordered=False)
                     except Exception as e:
                         print(f"Toplu DB Yazma Hatası: {e}")
+                        # Toplu yazma hatası durumunda, etkilenen belgelerin sayısını tahmin etmeye çalış
                         c["errors"] += len(update_requests)
                         c["done"] -= len(update_requests) 
 
                 idx += len(batch_ids)
                 
-                # İlerleme güncellemesi
                 if time.time() - last_update > update_interval or idx >= len(ids) or stop_event.is_set():
                     
                     text = ""
@@ -397,13 +397,12 @@ async def start_translation(client: Client, message: Message):
                     total_errors = sum(c_item['errors'] for c_item in collections)
                     remaining_all = total_all - total_done
 
-                    # --- YENİ İLERLEME GÖSTERİMİ ---
                     for c_item in collections:
                         remaining_current = max(0, c_item['total'] - c_item['done'])
                         text += (
                             f"📌 **{c_item['name']}**: {c_item['done']}/{c_item['total']}\n"
                             f"{progress_bar(c_item['done'], c_item['total'])}\n"
-                            f"Kalan: {remaining_current}\n\n"
+                            f"Hatalar: `{c_item['errors']}`\n\n"
                         )
                     
                     cpu = psutil.cpu_percent(interval=None)
@@ -411,7 +410,6 @@ async def start_translation(client: Client, message: Message):
 
                     elapsed_time = time.time() - start_time
                     
-                    # ETA Hesaplaması
                     if total_done > 0 and elapsed_time > 0:
                         speed = total_done / elapsed_time 
                         eta_seconds = remaining_all / speed
@@ -433,7 +431,6 @@ async def start_translation(client: Client, message: Message):
                             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]])
                         )
                     except Exception as e:
-                        print(f"Telegram Mesaj Güncelleme Hatası: {e}")
                         pass
                     
                     last_update = time.time()
