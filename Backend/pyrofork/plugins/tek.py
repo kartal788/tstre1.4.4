@@ -115,6 +115,9 @@ def translate_batch_worker(batch_data):
             errors.append(f"ID: {_id} | Hata: {str(e)}")
 
     return results, errors
+
+--------cevir---------
+
 @Client.on_message(filters.command("cevir") & filters.private & filters.user(OWNER_ID))
 async def cevir(client: Client, message: Message):
     global stop_event
@@ -192,6 +195,26 @@ async def cevir(client: Client, message: Message):
                 else:
                     c["done"] = col.count_documents({"cevrildi": True})
 
+                # Sistem durumu
+                cpu = round(psutil.cpu_percent(interval=0.1), 1)
+                ram_percent = round(psutil.virtual_memory().percent, 1)
+
+                # Zaman ve ETA hesaplama
+                elapsed_time = time.time() - start_time
+                elapsed_h, rem = divmod(int(elapsed_time), 3600)
+                elapsed_m, elapsed_s = divmod(rem, 60)
+                elapsed_time_str = f"{elapsed_h}h{elapsed_m}m{elapsed_s}s"
+
+                total_done = sum(coll.get("done_episodes", coll.get("done", 0)) for coll in collections)
+                total_to_translate = sum(coll.get("total_episodes", coll.get("total", 0)) for coll in collections)
+                if total_done > 0:
+                    eta_sec = (total_to_translate - total_done) * (elapsed_time / total_done)
+                else:
+                    eta_sec = 0
+                eta_h, rem = divmod(int(eta_sec), 3600)
+                eta_m, eta_s = divmod(rem, 60)
+                eta_str = f"{eta_h}h{eta_m}m{eta_s}s"
+
                 # İlerleme mesajını güncelle
                 if time.time() - last_update >= update_interval or idx >= len(ids):
                     last_update = time.time()
@@ -204,7 +227,12 @@ async def cevir(client: Client, message: Message):
                             f"{progress_bar(done_count, total_count)}\n"
                             f"Hatalar: {len(coll['errors_list'])}\n"
                         )
-                    progress_text = "🇹🇷 Türkçe çeviri hazırlanıyor...\n\n" + "\n".join(progress_lines)
+                    progress_text = (
+                        "🇹🇷 Türkçe çeviri hazırlanıyor...\n\n"
+                        + "\n".join(progress_lines)
+                        + f"\nSüre: `{elapsed_time_str}` (`{eta_str}`)\n"
+                        f"CPU: `{cpu}%` | RAM: `{ram_percent}%`"
+                    )
                     try:
                         await start_msg.edit_text(
                             progress_text,
@@ -216,7 +244,7 @@ async def cevir(client: Client, message: Message):
     finally:
         pool.shutdown(wait=False)
 
-    # ---------------- Sonuç ekranı ----------------
+    # Sonuç özeti ve loglar
     async def send_final_summary():
         end_time = time.time()
         total_duration = end_time - start_time
@@ -228,6 +256,10 @@ async def cevir(client: Client, message: Message):
         total_remaining = total_to_translate - total_done
         total_errors = sum(len(c["errors_list"]) for c in collections)
 
+        h, rem = divmod(int(total_duration), 3600)
+        m, s = divmod(rem, 60)
+        duration_str = f"{h}h{m}m{s}s"
+
         final_text = (
             "📊 **Genel Özet**\n\n"
             f"┠ Film    : {total_movies}\n"
@@ -235,7 +267,7 @@ async def cevir(client: Client, message: Message):
             f"┠ Başarılı: {total_done}\n"
             f"┠ Kalan   : {total_remaining}\n"
             f"┠ Hatalı  : {total_errors}\n"
-            f"┠ Süre    : {format_time_custom(total_duration)}"
+            f"┠ Süre    : {duration_str}"
         )
 
         await start_msg.edit_text(final_text, parse_mode=enums.ParseMode.MARKDOWN)
@@ -252,7 +284,6 @@ async def cevir(client: Client, message: Message):
             log_path = "cevirhatalari.txt"
             with open(log_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(hata_icerigi))
-
             try:
                 await client.send_document(chat_id=OWNER_ID, document=log_path,
                                            caption="⛔ Çeviri sırasında hatalar oluştu / kalan içerikler")
@@ -261,7 +292,7 @@ async def cevir(client: Client, message: Message):
 
     await send_final_summary()
 
-    # ---------------- Henüz çevrilmemiş içerikleri logla ----------------
+    # Henüz çevrilmemiş içerikleri logla
     async def log_uncleared_items():
         uncleared_lines = []
 
