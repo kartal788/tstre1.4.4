@@ -116,7 +116,7 @@ def translate_batch_worker(batch_data):
 
     return results, errors
 
---------cevir---------
+# --------cevir---------
 
 @Client.on_message(filters.command("cevir") & filters.private & filters.user(OWNER_ID))
 async def cevir(client: Client, message: Message):
