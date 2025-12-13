@@ -162,26 +162,48 @@ async def tur_ve_platform_duzelt(client: Client, message: Message):
 def translate_batch_worker(batch):
     CACHE = {}
     results = []
+
     for doc in batch:
         _id = doc.get("_id")
         upd = {}
+        already_translated = doc.get("cevrildi", False)
+        is_tv = doc.get("media_type") == "tv"
+
+        # Film: zaten çevrildiyse atla
+        if not is_tv and already_translated:
+            continue
+
+        # Açıklama çevirisi
         desc = doc.get("description")
-        if desc:
+        if desc and (not already_translated):
             upd["description"] = translate_text_safe(desc, CACHE)
-        seasons = doc.get("seasons")
-        if seasons:
+
+        seasons = doc.get("seasons", [])
+        if seasons and isinstance(seasons, list):
             modified = False
             for season in seasons:
                 for ep in season.get("episodes", []):
+                    # Bölüm zaten çevrildiyse atla
+                    if ep.get("cevrildi", False):
+                        continue
                     if "title" in ep and ep["title"]:
                         ep["title"] = translate_text_safe(ep["title"], CACHE)
                         modified = True
                     if "overview" in ep and ep["overview"]:
                         ep["overview"] = translate_text_safe(ep["overview"], CACHE)
                         modified = True
+                    # Bölüm çevrildi olarak işaretle
+                    if modified:
+                        ep["cevrildi"] = True
             if modified:
                 upd["seasons"] = seasons
-        results.append((_id, upd))
+
+        # Film veya tv içerik çevrildiyse cevrildi işareti ekle
+        if not is_tv and upd:
+            upd["cevrildi"] = True
+
+        if upd:
+            results.append((_id, upd))
     return results
 
 async def process_collection_parallel(collection, name, message):
