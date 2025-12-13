@@ -141,7 +141,7 @@ async def cevir(client: Client, message: Message):
     global stop_event
 
     if stop_event.is_set():
-        await message.reply_text("⛔ Zaten çalışan bir işlem var.")
+        await message.reply_text("⛔ Zaten devam eden bir işlem var.")
         return
 
     stop_event.clear()
@@ -155,9 +155,8 @@ async def cevir(client: Client, message: Message):
 
     start_time = time.time()
 
-    # -------- SAYILAR --------
+    # -------- Çevrilecek sayılar --------
     movie_to_translate = movie_col.count_documents({"cevrildi": {"$ne": True}})
-
     pipeline = [
         {"$unwind": "$seasons"},
         {"$unwind": "$seasons.episodes"},
@@ -166,32 +165,23 @@ async def cevir(client: Client, message: Message):
     ]
     res = list(series_col.aggregate(pipeline))
     series_to_translate = res[0]["total"] if res else 0
-
     TOTAL_TO_TRANSLATE = movie_to_translate + series_to_translate
 
+    # -------- Koleksiyonlar --------
     collections = [
         {
-            "name": "Filmler",
             "col": movie_col,
-            "ids": [
-                d["_id"]
-                for d in movie_col.find({"cevrildi": {"$ne": True}}, {"_id": 1})
-            ],
+            "name": "Filmler",
+            "ids": [d["_id"] for d in movie_col.find({"cevrildi": {"$ne": True}}, {"_id": 1})],
             "translated_now": 0,
-            "errors": []
+            "errors_list": []
         },
         {
-            "name": "Diziler",
             "col": series_col,
-            "ids": [
-                d["_id"]
-                for d in series_col.find(
-                    {"seasons.episodes.cevrildi": {"$ne": True}},
-                    {"_id": 1}
-                )
-            ],
+            "name": "Diziler",
+            "ids": [d["_id"] for d in series_col.find({"seasons.episodes.cevrildi": {"$ne": True}}, {"_id": 1})],
             "translated_now": 0,
-            "errors": []
+            "errors_list": []
         }
     ]
 
@@ -210,23 +200,23 @@ async def cevir(client: Client, message: Message):
                 if stop_event.is_set():
                     break
 
-                batch_ids = ids[idx:idx + batch_size]
+                batch_ids = ids[idx: idx + batch_size]
                 batch_docs = list(col.find({"_id": {"$in": batch_ids}}))
 
+                # Worker fonksiyonunu çalıştır
                 results, errors, ep_count = await loop.run_in_executor(
                     pool,
                     translate_batch_worker,
-                    {
-                        "docs": batch_docs,
-                        "stop_event": stop_event
-                    }
+                    {"docs": batch_docs, "stop_event": stop_event}
                 )
 
-                c["errors"].extend(errors)
+                c["errors_list"].extend(errors)
 
                 for _id, upd in results:
-                    col.update_one({"_id": _id}, {"$set": upd})
+                    if upd:
+                        col.update_one({"_id": _id}, {"$set": upd})
 
+                # Çevrilen sayısını güncelle
                 if c["name"] == "Filmler":
                     c["translated_now"] += len(results)
                 else:
@@ -234,19 +224,20 @@ async def cevir(client: Client, message: Message):
 
                 idx += len(batch_ids)
 
+                # İlerleme güncellemesi
                 elapsed = time.time() - start_time
                 total_done = sum(x["translated_now"] for x in collections)
                 remaining = TOTAL_TO_TRANSLATE - total_done
                 eta = int((remaining * elapsed / total_done)) if total_done else 0
 
-                if time.time() - last_update > 10:
+                if time.time() - last_update >= 10:
                     last_update = time.time()
                     cpu = psutil.cpu_percent(0.1)
                     ram = psutil.virtual_memory().percent
 
                     await start_msg.edit_text(
-                        f"🇹🇷 Türkçe çeviri hazırlanıyor...\n\n"
-                        f"Toplam: {TOTAL_TO_TRANSLATE}\n"
+                        f"🇹🇷 Türkçe çeviri devam ediyor...\n\n"
+                        f"Toplam içerik: {TOTAL_TO_TRANSLATE}\n"
                         f"Çevrilen: {total_done}\n"
                         f"Kalan: {remaining}\n"
                         f"{progress_bar(total_done, TOTAL_TO_TRANSLATE)}\n\n"
@@ -260,9 +251,9 @@ async def cevir(client: Client, message: Message):
     finally:
         pool.shutdown(wait=False)
 
-    # -------- ÖZET --------
+    # -------- Genel Özet --------
     total_done = sum(c["translated_now"] for c in collections)
-    total_errors = sum(len(c["errors"]) for c in collections)
+    total_errors = sum(len(c["errors_list"]) for c in collections)
 
     await start_msg.edit_text(
         f"📊 **Genel Özet**\n\n"
@@ -273,16 +264,17 @@ async def cevir(client: Client, message: Message):
         parse_mode=enums.ParseMode.MARKDOWN
     )
 
-    # -------- HATA LOG DOSYASI --------
+    # -------- Hata log dosyası --------
     hata_icerigi = []
     for c in collections:
-        if c["errors_list"]:
+        if c.get("errors_list"):
             hata_icerigi.append(f"*** {c['name']} Hataları ***")
             hata_icerigi.extend(c["errors_list"])
             hata_icerigi.append("")
 
     if hata_icerigi:
-        log_path = "cevirhatalari.txt"
+        import os
+        log_path = os.path.join(os.getcwd(), "cevir_hatalari.txt")
         with open(log_path, "w", encoding="utf-8") as f:
             f.write("\n".join(hata_icerigi))
 
@@ -292,9 +284,8 @@ async def cevir(client: Client, message: Message):
                 document=log_path,
                 caption="⛔ Çeviri sırasında oluşan hatalar"
             )
-        except:
-            pass
-
+        except Exception as e:
+            print("Telegram gönderim hatası:", e)
 
 # ---------------- /cevirekle ----------------
 @Client.on_message(filters.command("cevirekle") & filters.private & filters.user(OWNER_ID))
