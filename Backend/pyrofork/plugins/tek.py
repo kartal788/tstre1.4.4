@@ -136,7 +136,7 @@ async def cevir(client: Client, message: Message):
 
     collections = [
         {"col": movie_col, "name": "Filmler", "total": movie_col.count_documents({}), "done": 0, "errors_list": []},
-        {"col": series_col, "name": "Diziler", "total_episodes": 0, "done_episodes": 0, "errors_list": []},
+        {"col": series_col, "name": "Bölümler", "total_episodes": 0, "done_episodes": 0, "errors_list": []},
     ]
 
     # Diziler için toplam bölüm sayısını hesapla
