@@ -67,36 +67,6 @@ def format_time_custom(total_seconds):
     m, s = divmod(rem, 60)
     return f"{h}s{m}d{s:02}s"
 
-def translate_batch_worker(batch_data):
-    batch_docs = batch_data["docs"]
-    stop_flag_set = batch_data["stop_flag_set"]
-    if stop_flag_set:
-        return []
-    CACHE = {}
-    results = []
-
-    for doc in batch_docs:
-        if stop_flag_set:
-            break
-        _id = doc.get("_id")
-        upd = {}
-
-        if doc.get("description"):
-            upd["description"] = translate_text_safe(doc["description"], CACHE)
-
-        seasons = doc.get("seasons")
-        if seasons:
-            for s in seasons:
-                for ep in s.get("episodes", []):
-                    if ep.get("title"):
-                        ep["title"] = translate_text_safe(ep["title"], CACHE)
-                    if ep.get("overview"):
-                        ep["overview"] = translate_text_safe(ep["overview"], CACHE)
-            upd["seasons"] = seasons
-
-        results.append((_id, upd))
-    return results
-
 async def handle_stop(callback_query: CallbackQuery):
     stop_event.set()
     try:
@@ -134,13 +104,47 @@ async def cevir(client: Client, message: Message):
     workers, batch_size = dynamic_config()
     pool = ProcessPoolExecutor(max_workers=workers)
 
+    def translate_batch_worker(batch_data):
+        batch_docs = batch_data["docs"]
+        stop_flag_set = batch_data["stop_flag_set"]
+        if stop_flag_set:
+            return []
+        CACHE = {}
+        results = []
+
+        for doc in batch_docs:
+            if stop_flag_set:
+                break
+            _id = doc.get("_id")
+            upd = {}
+            cevrildi = doc.get("cevrildi", False)
+
+            if cevrildi:
+                continue
+
+            if doc.get("description"):
+                upd["description"] = translate_text_safe(doc["description"], CACHE)
+
+            seasons = doc.get("seasons")
+            if seasons:
+                for s in seasons:
+                    for ep in s.get("episodes", []):
+                        if ep.get("cevrildi", False):
+                            continue
+                        if ep.get("title"):
+                            ep["title"] = translate_text_safe(ep["title"], CACHE)
+                        if ep.get("overview"):
+                            ep["overview"] = translate_text_safe(ep["overview"], CACHE)
+                        ep["cevrildi"] = True
+                upd["seasons"] = seasons
+
+            upd["cevrildi"] = True
+            results.append((_id, upd))
+        return results
+
     try:
         for c in collections:
             col = c["col"]
-            total = c["total"]
-            if total == 0:
-                continue
-
             ids = [d["_id"] for d in col.find({}, {"_id":1})]
             idx = 0
 
@@ -158,23 +162,23 @@ async def cevir(client: Client, message: Message):
                     try:
                         if upd:
                             col.update_one({"_id":_id}, {"$set":upd})
-                        c["done"] +=1
+                        c["done"] += 1
                     except:
-                        c["errors"] +=1
+                        c["errors"] += 1
                 idx += len(batch_ids)
 
                 if time.time() - last_update > update_interval or idx >= len(ids) or stop_event.is_set():
-                    text=""
+                    text = ""
                     for col_summary in collections:
-                        rem = col_summary["total"]-col_summary["done"]
+                        rem = col_summary["total"] - col_summary["done"]
                         text += f"📌 **{col_summary['name']}**: {col_summary['done']}/{col_summary['total']}\n"
                         text += f"{progress_bar(col_summary['done'], col_summary['total'])}\n"
                         text += f"Hatalar: `{col_summary['errors']}` | Kalan: {rem}\n\n"
-                    elapsed=time.time()-start_time
-                    total_done=sum(x["done"] for x in collections)
-                    total_all=sum(x["total"] for x in collections)
-                    rem_all = total_all-total_done
-                    eta_seconds = rem_all/(total_done/elapsed) if total_done>0 else -1
+                    elapsed = time.time() - start_time
+                    total_done = sum(x["done"] for x in collections)
+                    total_all = sum(x["total"] for x in collections)
+                    rem_all = total_all - total_done
+                    eta_seconds = rem_all / (total_done / elapsed) if total_done > 0 else -1
                     text += f"Süre: `{format_time_custom(elapsed)}` (`{format_time_custom(eta_seconds)}`)\n"
                     text += f"CPU: `{psutil.cpu_percent()}%` | RAM: `{psutil.virtual_memory().percent}%`"
                     try:
@@ -185,17 +189,17 @@ async def cevir(client: Client, message: Message):
                         )
                     except:
                         pass
-                    last_update=time.time()
+                    last_update = time.time()
     finally:
         pool.shutdown(wait=False)
 
     # Final ekran
-    final_text="🎉 **Türkçe Çeviri Sonuçları**\n\n"
+    final_text = "🎉 **Türkçe Çeviri Sonuçları**\n\n"
     total_all = sum(c["total"] for c in collections)
     done_all = sum(c["done"] for c in collections)
     errors_all = sum(c["errors"] for c in collections)
     rem_all = total_all - done_all
-    total_time = format_time_custom(time.time()-start_time)
+    total_time = format_time_custom(time.time() - start_time)
 
     for c in collections:
         final_text += f"📌 **{c['name']}**: {c['done']}/{c['total']}\n"
@@ -305,7 +309,6 @@ async def tur_ve_platform_duzelt(client: Client, message: Message):
 
     await start_msg.edit_text(f"✅ Tür ve platform güncellemesi tamamlandı.\nToplam değiştirilen kayıt: {total_fixed}")
 
-
 # ---------------- /ISTATISTIK ----------------
 def get_db_stats_and_genres(url):
     client = MongoClient(url)
@@ -333,8 +336,8 @@ def get_system_status():
     free_percent = round((disk.free/disk.total)*100,1)
     
     uptime_sec = int(time.time() - bot_start_time)
-    h, rem = divmod(uptime_sec, 3600)   # saat ve kalan saniye
-    m, s = divmod(rem, 60)               # dakika ve saniye
+    h, rem = divmod(uptime_sec, 3600)
+    m, s = divmod(rem, 60)
     uptime = f"{h}sa {m}dk {s}sn"
 
     return cpu, ram, free_disk, free_percent, uptime
@@ -357,7 +360,6 @@ async def istatistik(client: Client, message: Message):
     )
 
     await message.reply_text(text, parse_mode=enums.ParseMode.HTML)
-
 
 # ---------------- CALLBACK QUERY ----------------
 @Client.on_callback_query()
