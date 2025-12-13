@@ -6,7 +6,7 @@ from concurrent.futures import ProcessPoolExecutor
 from collections import defaultdict
 
 from pyrogram import Client, filters, enums
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.types import Message
 from pymongo import MongoClient, UpdateOne
 from deep_translator import GoogleTranslator
 import psutil
@@ -54,30 +54,21 @@ def translate_safe(text, cache):
     cache[text] = tr
     return tr
 
-# ================= STOP CALLBACK (SADECE /cevir) ====
-@Client.on_callback_query(filters.regex("^stop$"))
-async def stop_callback(_, q: CallbackQuery):
+# ================= /IPTAL ===========================
+@Client.on_message(filters.command("iptal") & filters.private & CustomFilters.owner)
+async def iptal(_, message: Message):
     stop_event.set()
-    await q.answer("İşlem iptal edildi")
+    await message.reply_text("⛔ Çeviri işlemi durduruldu.")
 
 # ================= /CEVIR ===========================
 @Client.on_message(filters.command("cevir") & filters.private & CustomFilters.owner)
 async def cevir(client: Client, message: Message):
     if stop_event.is_set():
-        await message.reply_text("⛔ Devam eden işlem var")
-        return
+        await message.reply_text("⛔ Devam eden işlem yok.")
+        stop_event.clear()
 
     stop_event.clear()
-    msg = await message.reply_text(
-        "🇹🇷 Çeviri başlatıldı...",
-        reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]]
-        )
-    )
-
-    workers, batch = dynamic_config()
-    pool = ProcessPoolExecutor(max_workers=workers)
-    start = time.time()
+    status = await message.reply_text("🇹🇷 Çeviri başlatıldı...\nDurdurmak için `/iptal` yazın.")
 
     for col in (movie_col, series_col):
         docs = list(col.find({"cevrildi": {"$ne": True}}))
@@ -85,7 +76,8 @@ async def cevir(client: Client, message: Message):
 
         for doc in docs:
             if stop_event.is_set():
-                break
+                await status.edit_text("⛔ Çeviri iptal edildi.")
+                return
 
             upd = {}
             if doc.get("description"):
@@ -104,7 +96,7 @@ async def cevir(client: Client, message: Message):
             upd["cevrildi"] = True
             col.update_one({"_id": doc["_id"]}, {"$set": upd})
 
-    await msg.edit_text("✅ Çeviri tamamlandı")
+    await status.edit_text("✅ Çeviri tamamlandı.")
 
 # ================= /TUR (İPTALSİZ) ==================
 @Client.on_message(filters.command("tur") & filters.private & CustomFilters.owner)
@@ -164,17 +156,19 @@ async def tur_ve_platform_duzelt(client: Client, message: Message):
         if bulk:
             col.bulk_write(bulk)
 
-    await start_msg.edit_text(f"✅ Tür güncellemesi tamamlandı\nToplam: {total}")
+    await start_msg.edit_text(f"✅ Tür ve platform güncellemesi tamamlandı\nToplam: {total}")
 
 # ================= /ISTATISTIK ======================
 @Client.on_message(filters.command("istatistik") & filters.private & CustomFilters.owner)
 async def istatistik(_, m: Message):
     movies = movie_col.count_documents({})
     series = series_col.count_documents({})
+    uptime = int(time.time() - bot_start_time)
+
     await m.reply_text(
         f"📊 **İstatistik**\n\n"
         f"🎬 Filmler: `{movies}`\n"
         f"📺 Diziler: `{series}`\n"
-        f"⏱ Çalışma süresi: `{int(time.time() - bot_start_time)} sn`",
+        f"⏱ Çalışma süresi: `{uptime} sn`",
         parse_mode=enums.ParseMode.MARKDOWN
     )
