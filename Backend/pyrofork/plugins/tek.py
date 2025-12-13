@@ -115,7 +115,6 @@ def translate_batch_worker(batch_data):
             errors.append(f"ID: {_id} | Hata: {str(e)}")
 
     return results, errors
-# ---------------- /cevir (güncellenmiş) ----------------
 @Client.on_message(filters.command("cevir") & filters.private & filters.user(OWNER_ID))
 async def cevir(client: Client, message: Message):
     global stop_event
@@ -262,6 +261,40 @@ async def cevir(client: Client, message: Message):
 
     await send_final_summary()
 
+    # ---------------- Henüz çevrilmemiş içerikleri logla ----------------
+    async def log_uncleared_items():
+        uncleared_lines = []
+
+        # Filmler
+        for doc in movie_col.find({"cevrildi": {"$ne": True}}, {"_id":1, "title":1}):
+            uncleared_lines.append(f"Film ID: {doc['_id']} | Title: {doc.get('title','')}")
+
+        # Diziler
+        for doc in series_col.find({}, {"_id":1, "title":1, "seasons.episodes":1}):
+            for season in doc.get("seasons", []):
+                for ep in season.get("episodes", []):
+                    if not ep.get("cevrildi", False):
+                        uncleared_lines.append(
+                            f"Dizi ID: {doc['_id']} | Series: {doc.get('title','')} | "
+                            f"Sezon: {season.get('season_number','')} | Bölüm: {ep.get('episode_number','')} | "
+                            f"Title: {ep.get('title','')}"
+                        )
+
+        if uncleared_lines:
+            log_path = "cevir_henüz_cevrilmemis.txt"
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(uncleared_lines))
+
+            try:
+                await client.send_document(
+                    chat_id=OWNER_ID,
+                    document=log_path,
+                    caption="⛔ Henüz çevrilmemiş içerikler"
+                )
+            except:
+                pass
+
+    await log_uncleared_items()
 
 # ---------------- /cevirekle ----------------
 @Client.on_message(filters.command("cevirekle") & filters.private & filters.user(OWNER_ID))
