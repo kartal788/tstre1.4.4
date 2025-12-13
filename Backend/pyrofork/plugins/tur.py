@@ -1,14 +1,11 @@
 import asyncio
 import time
 from pyrogram import Client, filters, enums
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from Backend.helper.custom_filter import CustomFilters
 from pymongo import MongoClient, UpdateOne
 import os
+from Backend.helper.custom_filter import CustomFilters
 
 # -----------------------
-stop_event = asyncio.Event()
-
 # DATABASE sadece ortam değişkeninden okunacak
 db_raw = os.getenv("DATABASE", "")
 if not db_raw:
@@ -27,21 +24,10 @@ movie_col = db["movie"]
 series_col = db["tv"]
 # -----------------------
 
-# ----- STOP CALLBACK -----
-@Client.on_callback_query(filters.regex("stop"))
-async def stop_callback(client, callback_query):
-    stop_event.set()
-    await callback_query.answer("İşlem iptal edildi!")
-
 # ----- TEK SEFERDE TÜRLER VE PLATFORM -----
 @Client.on_message(filters.command("tur") & filters.private & CustomFilters.owner)
 async def tur_ve_platform_duzelt(client: Client, message):
-    stop_event.clear()
-    
-    start_msg = await message.reply_text(
-        "🔄 Tür ve platform güncellemesi başlatıldı…",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]]),
-    )
+    start_msg = await message.reply_text("🔄 Tür ve platform güncellemesi başlatıldı…")
     
     genre_map = {
         "Action": "Aksiyon", "Film-Noir": "Kara Film", "Game-Show": "Oyun Gösterisi", "Short": "Kısa",
@@ -77,20 +63,13 @@ async def tur_ve_platform_duzelt(client: Client, message):
         bulk_ops = []
 
         for doc in docs_cursor:
-            if stop_event.is_set():
-                break
-
             doc_id = doc["_id"]
             genres = doc.get("genres", [])
             updated = False
 
-            new_genres = []
-            for g in genres:
-                if g in genre_map:
-                    new_genres.append(genre_map[g])
-                    updated = True
-                else:
-                    new_genres.append(g)
+            new_genres = [genre_map.get(g, g) for g in genres]
+            if new_genres != genres:
+                updated = True
             genres = new_genres
 
             for t in doc.get("telegram", []):
@@ -115,10 +94,7 @@ async def tur_ve_platform_duzelt(client: Client, message):
 
             if time.time() - last_update > 5:
                 try:
-                    await start_msg.edit_text(
-                        f"{name}: Güncellenen kayıtlar: {total_fixed}",
-                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]]),
-                    )
+                    await start_msg.edit_text(f"{name}: Güncellenen kayıtlar: {total_fixed}")
                 except:
                     pass
                 last_update = time.time()
