@@ -133,20 +133,7 @@ def translate_batch_worker(batch_data):
 # ---------------- /cevir ----------------
 @Client.on_message(filters.command("cevir") & filters.private & filters.user(OWNER_ID))
 async def cevir(client: Client, message: Message):
-    global stop_event
-
-    if stop_event.is_set():
-        await message.reply_text("⛔ Zaten devam eden bir işlem var.")
-        return
-
-    stop_event.clear()
-
-    start_msg = await message.reply_text(
-        "🇹🇷 Türkçe çeviri başlatılıyor...",
-        reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]]
-        ),
-    )
+    start_msg = await message.reply_text("🇹🇷 Türkçe çeviri başlatılıyor...")
 
     start_time = time.time()
 
@@ -192,9 +179,6 @@ async def cevir(client: Client, message: Message):
             idx = 0
 
             while idx < len(ids):
-                if stop_event.is_set():
-                    break
-
                 batch_ids = ids[idx: idx + batch_size]
                 batch_docs = list(col.find({"_id": {"$in": batch_ids}}))
 
@@ -202,7 +186,7 @@ async def cevir(client: Client, message: Message):
                 results, errors, ep_count = await loop.run_in_executor(
                     pool,
                     translate_batch_worker,
-                    {"docs": batch_docs, "stop_event": stop_event}
+                    {"docs": batch_docs}  # artık stop_event yok
                 )
 
                 c["errors_list"].extend(errors)
@@ -238,10 +222,7 @@ async def cevir(client: Client, message: Message):
                         f"{progress_bar(total_done, TOTAL_TO_TRANSLATE)}\n\n"
                         f"Süre: `{int(elapsed)}s` | ETA: `{eta}s`\n"
                         f"CPU: `{cpu}%` | RAM: `{ram}%`",
-                        parse_mode=enums.ParseMode.MARKDOWN,
-                        reply_markup=InlineKeyboardMarkup(
-                            [[InlineKeyboardButton("❌ İptal Et", callback_data="stop")]]
-                        ),
+                        parse_mode=enums.ParseMode.MARKDOWN
                     )
     finally:
         pool.shutdown(wait=False)
@@ -281,6 +262,7 @@ async def cevir(client: Client, message: Message):
             )
         except Exception as e:
             print("Telegram gönderim hatası:", e)
+
 
 # ---------------- /cevirekle ----------------
 @Client.on_message(filters.command("cevirekle") & filters.private & filters.user(OWNER_ID))
