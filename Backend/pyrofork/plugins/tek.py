@@ -87,7 +87,7 @@ async def cevir(_, message: Message):
 
     await status.edit_text("✅ Çeviri tamamlandı.")
 
-# ================= /TUR (İPTALSİZ) ===================
+# ================= /TUR ==============================
 @Client.on_message(filters.command("tur") & filters.private & CustomFilters.owner)
 async def tur_ve_platform_duzelt(_, message: Message):
     start_msg = await message.reply_text("🔄 Tür ve platform güncellemesi başlatıldı…")
@@ -114,8 +114,8 @@ async def tur_ve_platform_duzelt(_, message: Message):
     }
 
     collections = [(movie_col, "Filmler"), (series_col, "Diziler")]
-
     total_fixed = 0
+
     for col, name in collections:
         docs_cursor = col.find({}, {"_id": 1, "genres": 1, "telegram": 1, "seasons": 1})
         bulk_ops = []
@@ -159,6 +159,36 @@ async def tur_ve_platform_duzelt(_, message: Message):
     await start_msg.edit_text(
         f"✅ Tür ve platform güncellemesi tamamlandı.\nToplam değiştirilen kayıt: {total_fixed}"
     )
+
+# ================= /CEVIRKALDIR =====================
+@Client.on_message(filters.command("cevirkaldir") & filters.private & CustomFilters.owner)
+async def cevirkaldir(_, message: Message):
+    status = await message.reply_text("🔄 'cevrildi' alanları kaldırılıyor...")
+    
+    total_updated = 0
+    for col in (movie_col, series_col):
+        docs_cursor = col.find({"cevrildi": True}, {"_id": 1})
+        bulk_ops = [UpdateOne({"_id": doc["_id"]}, {"$unset": {"cevrildi": ""}}) for doc in docs_cursor]
+        if bulk_ops:
+            result = col.bulk_write(bulk_ops)
+            total_updated += result.modified_count
+
+    await status.edit_text(f"✅ 'cevrildi' alanları kaldırıldı.\nToplam güncellenen kayıt: {total_updated}")
+
+# ================= /CEVIREKLE =====================
+@Client.on_message(filters.command("cevirekle") & filters.private & CustomFilters.owner)
+async def cevirekle(_, message: Message):
+    status = await message.reply_text("🔄 'cevrildi' alanları ekleniyor...")
+    
+    total_updated = 0
+    for col in (movie_col, series_col):
+        docs_cursor = col.find({"cevrildi": {"$ne": True}}, {"_id": 1})
+        bulk_ops = [UpdateOne({"_id": doc["_id"]}, {"$set": {"cevrildi": True}}) for doc in docs_cursor]
+        if bulk_ops:
+            result = col.bulk_write(bulk_ops)
+            total_updated += result.modified_count
+
+    await status.edit_text(f"✅ 'cevrildi' alanları eklendi.\nToplam güncellenen kayıt: {total_updated}")
 
 # ================= /ISTATISTIK ======================
 def get_db_urls():
