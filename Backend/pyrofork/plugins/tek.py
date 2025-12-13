@@ -298,38 +298,25 @@ async def cevirkaldir(client: Client, message: Message):
     status = await message.reply_text("🔄 'cevrildi' alanları kaldırılıyor...")
     total_updated = 0
 
-    # 1. FİLMLER için 'cevrildi' alanlarını kaldır
-    # 'cevrildi' bayrağı olan tüm filmleri bul
-    docs_cursor = movie_col.find({"cevrildi": True}, {"_id": 1})
-    
-    # Her film için $unset işlemi oluştur
-    bulk_ops = [
-        UpdateOne({"_id": doc["_id"]}, {"$unset": {"cevrildi": ""}}) 
-        for doc in docs_cursor
-    ]
+    for col in (movie_col, series_col):
+        # Üst seviye belgeler
+        docs_cursor = col.find({"cevrildi": True}, {"_id": 1})
+        bulk_ops = [UpdateOne({"_id": doc["_id"]}, {"$unset": {"cevrildi": ""}}) for doc in docs_cursor]
 
-    if bulk_ops:
-        res = movie_col.bulk_write(bulk_ops)
-        total_updated += res.modified_count
+        # Dizi bölümleri için
+        if col == series_col:
+            docs_cursor = col.find({"seasons.episodes.cevrildi": True}, {"_id": 1})
+            for doc in docs_cursor:
+                bulk_ops.append(
+                    UpdateOne(
+                        {"_id": doc["_id"]},
+                        {"$unset": {"seasons.$[].episodes.$[].cevrildi": ""}}
+                    )
+                )
 
-    # 2. DİZİLER için 'seasons.episodes.cevrildi' alanlarını kaldır
-    bulk_ops = []
-    
-    # 'cevrildi' bayrağı olan bölümleri içeren tüm dizileri bul
-    docs_cursor = series_col.find({"seasons.episodes.cevrildi": True}, {"_id": 1})
-    
-    # Her dizi için tüm bölümlerdeki 'cevrildi' alanını kaldıran $unset işlemi oluştur
-    for doc in docs_cursor:
-        bulk_ops.append(
-            UpdateOne(
-                {"_id": doc["_id"]},
-                {"$unset": {"seasons.$[].episodes.$[].cevrildi": ""}}
-            )
-        )
-
-    if bulk_ops:
-        res = series_col.bulk_write(bulk_ops)
-        total_updated += res.modified_count
+        if bulk_ops:
+            res = col.bulk_write(bulk_ops)
+            total_updated += res.modified_count
 
     await status.edit_text(f"✅ 'cevrildi' alanları kaldırıldı.\nToplam güncellenen kayıt: {total_updated}")
 
