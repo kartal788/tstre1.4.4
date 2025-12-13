@@ -40,7 +40,6 @@ def dynamic_config():
     cpu_count = multiprocessing.cpu_count()
     ram_percent = psutil.virtual_memory().percent
     cpu_percent_val = psutil.cpu_percent(interval=0.5)
-
     workers = max(1, min(cpu_count * 2, 16) if cpu_percent_val < 30 else (cpu_count if cpu_percent_val < 60 else 1))
     batch = 80 if ram_percent < 40 else 40 if ram_percent < 60 else 20 if ram_percent < 75 else 10
     return workers, batch
@@ -113,7 +112,7 @@ async def process_collection_parallel(collection, name, message):
 
     total = len(ids)
     if total == 0:
-        await message.edit_text(f"{name}: Çevrilecek içerik yok ✅")
+        await message.edit_text(f"{name}: Tüm içerikler çevrilmiş ✅")
         return 0, 0, 0, 0
 
     done = 0
@@ -204,3 +203,84 @@ async def cevir_iptal(client: Client, message: Message):
     global CEVIRME_IPTAL
     CEVIRME_IPTAL = True
     await message.reply_text("⛔ Çeviri işlemi durduruldu.", quote=True)
+
+# ---------------- /TUR COMMAND ----------------
+@Client.on_message(filters.command("tur") & filters.private & CustomFilters.owner)
+async def tur_ve_platform_duzelt(client: Client, message: Message):
+    genre_map = {
+        "Action": "Aksiyon", "Film-Noir": "Kara Film", "Game-Show": "Oyun Gösterisi", "Short": "Kısa",
+        "Sci-Fi": "Bilim Kurgu", "Sport": "Spor", "Adventure": "Macera", "Animation": "Animasyon",
+        "Biography": "Biyografi", "Comedy": "Komedi", "Crime": "Suç", "Documentary": "Belgesel",
+        "Drama": "Dram", "Family": "Aile", "News": "Haberler", "Fantasy": "Fantastik",
+        "History": "Tarih", "Horror": "Korku", "Music": "Müzik", "Musical": "Müzikal",
+        "Mystery": "Gizem", "Romance": "Romantik", "Science Fiction": "Bilim Kurgu",
+        "TV Movie": "TV Filmi", "Thriller": "Gerilim", "War": "Savaş", "Western": "Vahşi Batı",
+    }
+    platform_map = {
+        "MAX": "Max", "NF": "Netflix", "DSNP": "Disney", "Tv+": "Tv+", "Exxen": "Exxen", "AMZN": "Amazon",
+    }
+
+    start_msg = await message.reply_text("🔄 Tür ve platform güncellemesi başlatıldı…")
+    collections = [(movie_col, "Filmler"), (series_col, "Diziler")]
+    total_fixed = 0
+    for col, name in collections:
+        docs_cursor = col.find({}, {"_id":1, "genres":1, "telegram":1, "seasons":1})
+        bulk_ops = []
+        for doc in docs_cursor:
+            doc_id = doc["_id"]
+            genres = doc.get("genres", [])
+            updated = False
+            new_genres = [genre_map.get(g, g) for g in genres]
+            if new_genres != genres:
+                updated = True
+            genres = new_genres
+            for t in doc.get("telegram", []):
+                name_field = t.get("name","").lower()
+                for key, genre_name in platform_map.items():
+                    if key.lower() in name_field and genre_name not in genres:
+                        genres.append(genre_name)
+                        updated = True
+            for season in doc.get("seasons", []):
+                for ep in season.get("episodes", []):
+                    for t in ep.get("telegram", []):
+                        name_field = t.get("name","").lower()
+                        for key, genre_name in platform_map.items():
+                            if key.lower() in name_field and genre_name not in genres:
+                                genres.append(genre_name)
+                                updated = True
+            if updated:
+                bulk_ops.append(UpdateOne({"_id":doc_id}, {"$set":{"genres":genres}}))
+                total_fixed += 1
+        if bulk_ops:
+            col.bulk_write(bulk_ops)
+    await start_msg.edit_text(f"✅ Tür ve platform güncellemesi tamamlandı.\nToplam değiştirilen kayıt: {total_fixed}")
+
+# ---------------- /ISTATISTIK COMMAND ----------------
+@Client.on_message(filters.command("istatistik") & filters.private & CustomFilters.owner)
+async def send_statistics(client: Client, message: Message):
+    try:
+        total_movies = movie_col.count_documents({})
+        total_series = series_col.count_documents({})
+        translated_movies = movie_col.count_documents({"cevrildi": True})
+        translated_series = series_col.count_documents({"cevrildi": True})
+        cpu = psutil.cpu_percent()
+        ram = psutil.virtual_memory().percent
+        disk = psutil.disk_usage(DOWNLOAD_DIR)
+        free_disk = round(disk.free / (1024**3), 2)
+        free_percent = round((disk.free/disk.total)*100,1)
+        uptime_sec = int(time.time()-bot_start_time)
+        h, rem = divmod(uptime_sec,3600)
+        m, s = divmod(rem,60)
+        uptime = f"{h}s {m}d {s}s"
+
+        text = (
+            f"⌬ <b>İstatistik</b>\n\n"
+            f"┠ Filmler: {total_movies} (Çevrilen: {translated_movies})\n"
+            f"┠ Diziler: {total_series} (Çevrilen: {translated_series})\n"
+            f"┖ Disk Boş: {free_disk}GB [{free_percent}%]\n"
+            f"┟ CPU → {cpu}% | RAM → {ram}%\n"
+            f"┖ Süre → {uptime}"
+        )
+        await message.reply_text(text, parse_mode=enums.ParseMode.HTML, quote=True)
+    except Exception as e:
+        await message.reply_text(f"⚠️ Hata: {e}", quote=True)
