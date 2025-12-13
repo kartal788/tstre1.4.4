@@ -14,7 +14,7 @@ import psutil
 
 from Backend.helper.custom_filter import CustomFilters  # Owner filtresi için
 
-# ----------------- Ortam Değişkenlerinden DATABASE -----------------
+# ----------------- DATABASE -----------------
 db_raw = os.getenv("DATABASE", "")
 if not db_raw:
     raise Exception("DATABASE ortam değişkeni bulunamadı!")
@@ -35,7 +35,7 @@ translator = GoogleTranslator(source='en', target='tr')
 bot_start_time = time.time()
 DOWNLOAD_DIR = "/"
 
-# ----------------- Ortak Yardımcı Fonksiyonlar -----------------
+# ----------------- Yardımcı Fonksiyonlar -----------------
 def dynamic_config():
     cpu_count = multiprocessing.cpu_count()
     ram_percent = psutil.virtual_memory().percent
@@ -169,21 +169,18 @@ def translate_batch_worker(batch):
         already_translated = doc.get("cevrildi", False)
         is_tv = doc.get("media_type") == "tv"
 
-        # Film: zaten çevrildiyse atla
         if not is_tv and already_translated:
             continue
 
-        # Açıklama çevirisi
         desc = doc.get("description")
         if desc and (not already_translated):
             upd["description"] = translate_text_safe(desc, CACHE)
 
         seasons = doc.get("seasons", [])
-        if seasons and isinstance(seasons, list):
+        if seasons:
             modified = False
             for season in seasons:
                 for ep in season.get("episodes", []):
-                    # Bölüm zaten çevrildiyse atla
                     if ep.get("cevrildi", False):
                         continue
                     if "title" in ep and ep["title"]:
@@ -192,13 +189,11 @@ def translate_batch_worker(batch):
                     if "overview" in ep and ep["overview"]:
                         ep["overview"] = translate_text_safe(ep["overview"], CACHE)
                         modified = True
-                    # Bölüm çevrildi olarak işaretle
                     if modified:
                         ep["cevrildi"] = True
             if modified:
                 upd["seasons"] = seasons
 
-        # Film veya tv içerik çevrildiyse cevrildi işareti ekle
         if not is_tv and upd:
             upd["cevrildi"] = True
 
