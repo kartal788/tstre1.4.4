@@ -121,7 +121,7 @@ def translate_batch_worker(batch_data):
     stop_flag_set = batch_data["stop_flag_set"]
     
     if stop_flag_set:
-        return []
+        return {"results": [], "error_ids": []}
 
     CACHE = {}
     results = []
@@ -150,12 +150,15 @@ def translate_batch_worker(batch_data):
             
             if seasons and is_tv_show and isinstance(seasons, list):
                 modified = False
+                # Sezon döngüsü
                 for season in seasons:
                     eps = season.get("episodes", []) or []
+                    # Bölüm döngüsü
                     for ep in eps:
                         if stop_flag_set:
                             break
                         
+                        # Sadece çevrilmemişse işle
                         if ep.get(TRANSLATED_STATUS_FIELD) != TRANSLATED_STATUS_VALUE:
                             
                             # Başlık ve Özet çevirisi
@@ -170,6 +173,7 @@ def translate_batch_worker(batch_data):
                                 ep[TRANSLATED_STATUS_FIELD] = TRANSLATED_STATUS_VALUE
                                 
                 if modified:
+                    # Sezonlar listesi tamamen güncellendi
                     upd["seasons"] = seasons
                     needs_update = True
 
@@ -180,9 +184,8 @@ def translate_batch_worker(batch_data):
                 results.append((_id, upd))
             
         except Exception as e:
-            # Herhangi bir döküman işleme hatasında (verinin bozuk olması, çeviri hatası vb.)
-            # o dökümanı atla ve hatasını kaydet.
-            print(f"[{doc.get('media_type')}] {_id} dökümanında işleme hatası: {e}")
+            # İşleme hatası durumunda (örneğin döküman yapısı beklenenden farklıysa)
+            print(f"[{doc.get('media_type', 'unknown')}] {_id} dökümanında işleme hatası: {e}")
             error_ids.append(_id)
             continue
 
@@ -192,6 +195,7 @@ def translate_batch_worker(batch_data):
 async def get_translation_count():
     movie_count = movie_col.count_documents({TRANSLATED_STATUS_FIELD: {"$ne": TRANSLATED_STATUS_VALUE}})
     
+    # Diziler için, en az bir çevrilmemiş bölümü olan ana belgeleri bul
     series_count = series_col.aggregate([
         {"$unwind": "$seasons"},
         {"$unwind": "$seasons.episodes"},
@@ -347,6 +351,12 @@ async def start_translation(client: Client, message: Message):
 
                 batch_ids = ids[idx: idx + batch_size]
                 batch_docs = list(col.find({"_id": {"$in": batch_ids}})) 
+                
+                # Çekilen döküman kontrolü (0/1 hatası için kritik)
+                if not batch_docs and batch_ids:
+                    print(f"UYARI: {name} koleksiyonundan {len(batch_ids)} ID çekildi ancak dökümanlar bulunamadı. Atlanıyor.")
+                    idx += len(batch_ids)
+                    continue
 
                 worker_data = {
                     "docs": batch_docs,
@@ -358,6 +368,7 @@ async def start_translation(client: Client, message: Message):
                     future = loop.run_in_executor(pool, translate_batch_worker, worker_data)
                     worker_output = await future
                     results = worker_output["results"]
+                    # Worker'da işlenemeyen (hata veren) dökümanları hata sayacına ekle
                     c["errors"] += len(worker_output["error_ids"])
                 except Exception as e:
                     print(f"Worker Görev Başlatma/Tamamlama Hatası ({name}): {e}")
@@ -376,6 +387,7 @@ async def start_translation(client: Client, message: Message):
                         update_requests.append(
                             pymongo.UpdateOne({"_id": _id}, {"$set": upd})
                         )
+                    # Başarıyla işlendi (güncelleme olsa da olmasa da)
                     c["done"] += 1 
 
                 if update_requests:
@@ -383,7 +395,6 @@ async def start_translation(client: Client, message: Message):
                         col.bulk_write(update_requests, ordered=False)
                     except Exception as e:
                         print(f"Toplu DB Yazma Hatası: {e}")
-                        # Toplu yazma hatası durumunda, etkilenen belgelerin sayısını tahmin etmeye çalış
                         c["errors"] += len(update_requests)
                         c["done"] -= len(update_requests) 
 
