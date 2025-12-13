@@ -248,37 +248,42 @@ async def cevir(client: Client, message: Message):
     finally:
         pool.shutdown(wait=False)
 
+    # -------- SONUÇ ÖZETİ --------
     total_done = sum(c["translated_now"] for c in collections)
     total_errors = sum(len(c["errors_list"]) for c in collections)
+    total_remaining = TOTAL_TO_TRANSLATE - total_done
 
     await start_msg.edit_text(
         f"📊 **Genel Özet**\n\n"
         f"Toplam çevrilecek içerik: {TOTAL_TO_TRANSLATE}\n"
         f"Çevrilen: {total_done}\n"
-        f"Kalan: {TOTAL_TO_TRANSLATE - total_done}\n"
+        f"Kalan: {total_remaining}\n"
         f"Hatalı: {total_errors}",
         parse_mode=enums.ParseMode.MARKDOWN
     )
 
-        # Hataları dosya olarak gönder
-        hata_icerigi = []
-        for c in collections:
-            if c["errors_list"]:
-                hata_icerigi.append(f"*** {c['name']} Hataları ***")
-                hata_icerigi.extend(c["errors_list"])
-                hata_icerigi.append("")  # boş satır
+    # -------- HATA LOG DOSYASI --------
+    hata_icerigi = []
+    for c in collections:
+        if c["errors_list"]:
+            hata_icerigi.append(f"*** {c['name']} Hataları ***")
+            hata_icerigi.extend(c["errors_list"])
+            hata_icerigi.append("")
 
-        if hata_icerigi:
-            log_path = "cevirhatalari.txt"
-            with open(log_path, "w", encoding="utf-8") as f:
-                f.write("\n".join(hata_icerigi))
-            try:
-                await client.send_document(chat_id=OWNER_ID, document=log_path,
-                                           caption="⛔ Çeviri sırasında hatalar oluştu / kalan içerikler")
-            except:
-                pass
+    if hata_icerigi:
+        log_path = "cevirhatalari.txt"
+        with open(log_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(hata_icerigi))
 
-    await send_final_summary()
+        try:
+            await client.send_document(
+                chat_id=OWNER_ID,
+                document=log_path,
+                caption="⛔ Çeviri sırasında oluşan hatalar"
+            )
+        except:
+            pass
+
 
 # ---------------- /cevirekle ----------------
 @Client.on_message(filters.command("cevirekle") & filters.private & filters.user(OWNER_ID))
